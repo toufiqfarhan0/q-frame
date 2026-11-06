@@ -1,5 +1,5 @@
 {
-  "name": "q-frame-sdk",
+  "name": "@toufiqfarhan0/q-frame-sdk",
   "version": "0.1.0",
   "description": "Post-Quantum EIP-8250 Keyed Nonce Client SDK for EIP-8141 Frame Transactions & ERC-8421 Mempools",
   "main": "./dist/index.js",
@@ -36,7 +36,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/toufiqfarhan0/q-frame.git",
+    "url": "git+https://github.com/toufiqfarhan0/q-frame.git",
     "directory": "sdk"
   },
   "bugs": {

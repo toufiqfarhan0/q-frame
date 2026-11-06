@@ -22,6 +22,7 @@ See [`FEEDBACK.md`](./FEEDBACK.md) for devnet developer experience notes, client
 
 | Path | What lives here |
 | --- | --- |
+| `mempool-workshop/src/sdk/` | The `LeafManager` TypeScript SDK (`LeafManager.ts`) for on-chain leaf synchronization, EIP-8250 channel discovery, and ERC-8421 mempool admission routing. |
 | `mempool-workshop/contracts/` | `PQBenchmarkAccount.sol`, `HegotaMocks.sol`, and the Foundry gas curve test suite (`GasCurveTest.t.sol`). |
 | `mempool-workshop/src/` | TypeScript runner scripts for the 7-step workshop sequence and the single-command comparative benchmark (`step_pq_benchmark.ts`). |
 | `web/` | Swiss Design Gráfico web dashboard, live devnet RPC health monitoring, universal wallet modal (MetaMask, Phantom, Rabby, Coinbase, EIP-6963), and interactive benchmark trigger. |
@@ -82,6 +83,39 @@ It is important to emphasize that **safe fee-bumping with one-time keys remains 
   1. Re-signs under the same leaf key (the exact vulnerability, revealing two signatures and allowing forgery), or
   2. Signs under a new leaf key (which creates a separate, concurrent transaction on a new channel rather than replacing the pending one; if gas prices subsequently drop, both transactions could be included).
 * We document this trade-off as an architectural consideration for post-quantum wallet designers.
+
+---
+
+## The Q-Frame LeafManager SDK
+
+To address the practical operational challenges of stateful post-quantum hash trees, we packaged our EIP-8250 research into a modular client SDK ([`mempool-workshop/src/sdk/LeafManager.ts`](./mempool-workshop/src/sdk/LeafManager.ts)):
+
+```typescript
+import { LeafManager } from "./src/sdk/LeafManager.js";
+
+const manager = new LeafManager({
+  rpcUrl: "https://rpc1.hegota.ethrex.xyz",
+  walletAddress: "0xe5c5A34833db3A90E30adCD98f2955E36496483B",
+});
+
+// 1. Query on-chain nullifier state for OTS leaf #7 from NONCE_MANAGER (0x...8250)
+const status = await manager.getLeafStatus(7n);
+console.log(`Leaf #7 spent: ${status.isSpent}, on-chain seq: ${status.sequence}`);
+
+// 2. Discover next available unspent leaf after wallet recovery (zero off-chain sync required)
+const nextLeaf = await manager.getNextAvailableLeaf();
+
+// 3. Allocate 3 parallel independent channels for concurrent mempool dispatch
+const [channelA, channelB, channelC] = await manager.allocateParallelLeaves(3);
+
+// 4. Determine mempool admission route based on verification gas & staking status
+const route = manager.routeMempool(259_247, true);
+// => { targetMempool: "alt-mempool", admitted: true, reason: "Admitted into ERC-8421 alternative mempool..." }
+```
+
+The SDK is verified via 6 unit tests (`yarn test` in `mempool-workshop/test/LeafManager.test.ts`), confirming:
+* Exact mathematical compatibility with the EIP-8250 storage layout (`keccak256(pad32(sender) || pad32(key))`).
+* Strict canonical ($100\text{k}$) and alternative mempool ($2\text{M}$) routing decisions.
 
 ---
 

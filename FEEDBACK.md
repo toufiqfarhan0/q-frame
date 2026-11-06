@@ -51,7 +51,22 @@ During our implementation of `PQBenchmarkAccount`, we analyzed the interaction b
 
 ---
 
-## 5. Live On-Chain Evidence References
+## 5. Design Notes & Recommendations for the Access Layer Team
+
+### 1. Nonce-Key Namespacing (Typed Nonce Keys)
+Using raw integers (`nonceKey = leafIndex`) creates collision hazards if the same sender uses keyed nonces across multiple applications (e.g. session keys, automation bots, and OTS post-quantum keys). In our `LeafManager` SDK, we implemented namespacing via domain tags:
+$$\text{nonceKey} := \text{keccak256}(\text{"Q_FRAME_WOTS_LEAF_V1"} \parallel \text{uint256}(\text{leafIndex}))$$
+We recommend standardizing a 1-byte type prefix or domain separation standard in the EIP-8250 specification to prevent cross-protocol key collision.
+
+### 2. State Growth and First-Use Gas Overhead (20k Surcharge)
+Under EIP-8250, initializing a new keyed nonce channel writes to a fresh storage slot in `NONCE_MANAGER`, incurring a cold-write cost of 20,000 gas. For stateful hash-based signature schemes where *every single transaction* burns a new leaf key, this means:
+1. Every post-quantum transaction pays an extra 20,000 gas overhead.
+2. Nodes accumulate permanent un-cleared state for millions of burned leaves.
+We suggest considering bounded-lifetime nonce namespaces or gas-refund opcodes upon explicit nullification to mitigate permanent state bloat.
+
+---
+
+## 6. Live On-Chain Evidence References
 
 * **Contract Address:** [`0xe5c5A34833db3A90E30adCD98f2955E36496483B`](https://dora.hegota.ethrex.xyz/address/0xe5c5A34833db3A90E30adCD98f2955E36496483B)
 * **Deployment Transaction:** [`0xee6466d786117aabbb642dd2bd21c5ad56f79d9277aa7fe7196c0e88ae572d36`](https://dora.hegota.ethrex.xyz/tx/0xee6466d786117aabbb642dd2bd21c5ad56f79d9277aa7fe7196c0e88ae572d36) (Block `#1317596`)

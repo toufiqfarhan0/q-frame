@@ -1,12 +1,24 @@
-import { concat, keccak256, numberToHex, pad, type Address, type Hex } from "viem";
+import { concat, keccak256, numberToHex, pad, toBytes, type Address, type Hex } from "viem";
 
 export const NONCE_MANAGER_ADDRESS = "0x0000000000000000000000000000000000008250" as const;
+export const DEFAULT_DOMAIN_NAMESPACE = "Q_FRAME_WOTS_LEAF_V1";
+
+export type LeafState = "UNUSED" | "RESERVED" | "MINED" | "BURNED";
 
 export interface LeafStatus {
   leafIndex: bigint;
+  nonceKey: bigint;
   storageSlot: Hex;
-  sequence: bigint;
-  isSpent: boolean;
+  onChainSequence: bigint;
+  localState: LeafState;
+  isAvailable: boolean;
+}
+
+export interface JournalEntry {
+  leafIndex: string;
+  state: "RESERVED" | "BURNED";
+  timestamp: number;
+  reason?: string;
 }
 
 export interface MempoolRouteDecision {
@@ -16,85 +28,195 @@ export interface MempoolRouteDecision {
   reason: string;
 }
 
-/**
- * Q-Frame LeafManager SDK
- * 
- * Client SDK for Post-Quantum Smart Accounts using EIP-8250 Keyed Nonces and ERC-8421 Alt-Mempools.
- */
+export interface LeafManagerConfig {
+  rpcUrl: string;
+  walletAddress: Address;
+  nonceManagerAddress?: Address;
+  domainNamespace?: string;
+  canonicalCap?: number;
+  altMempoolCap?: number;
+  initialJournal?: JournalEntry[];
+}
+
 export class LeafManager {
   public readonly rpcUrl: string;
   public readonly walletAddress: Address;
   public readonly nonceManagerAddress: Address;
+  public readonly domainNamespace: string;
+  public readonly canonicalCap: number;
+  public readonly altMempoolCap: number;
 
-  constructor(options: {
-    rpcUrl: string;
-    walletAddress: Address;
-    nonceManagerAddress?: Address;
-  }) {
-    this.rpcUrl = options.rpcUrl;
-    this.walletAddress = options.walletAddress;
-    this.nonceManagerAddress = options.nonceManagerAddress || NONCE_MANAGER_ADDRESS;
+  private journal: Map<string, JournalEntry> = new Map();
+  private cursor: bigint = 0n;
+
+  constructor(config: LeafManagerConfig) {
+    this.rpcUrl = config.rpcUrl;
+    this.walletAddress = config.walletAddress;
+    this.nonceManagerAddress = config.nonceManagerAddress || NONCE_MANAGER_ADDRESS;
+    this.domainNamespace = config.domainNamespace || DEFAULT_DOMAIN_NAMESPACE;
+    this.canonicalCap = config.canonicalCap ?? 100_000;
+    this.altMempoolCap = config.altMempoolCap ?? 2_000_000;
+
+    if (config.initialJournal) {
+      for (const entry of config.initialJournal) {
+        this.journal.set(entry.leafIndex, entry);
+      }
+    }
   }
 
-  public getStorageSlot(leafIndex: bigint): Hex {
+  public deriveNonceKey(leafIndex: bigint): bigint {
+    const hash = keccak256(
+      concat([toBytes(this.domainNamespace), numberToHex(leafIndex, { size: 32 })])
+    );
+    return BigInt(hash);
+  }
+
+  public getStorageSlot(nonceKey: bigint): Hex {
     return keccak256(
       concat([
         pad(this.walletAddress, { size: 32 }),
-        numberToHex(leafIndex, { size: 32 }),
+        numberToHex(nonceKey, { size: 32 }),
       ])
     );
   }
 
+  public async getOnChainSequence(nonceKey: bigint): Promise<bigint> {
+    const slot = this.getStorageSlot(nonceKey);
+    try {
+      const res = await fetch(this.rpcUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "eth_getStorageAt",
+          params: [this.nonceManagerAddress, slot, "latest"],
+        }),
+      });
+      const data = (await res.json()) as { result?: Hex };
+      const raw = data.result || "0x0";
+      return BigInt(raw);
+    } catch {
+      return 0n;
+    }
+  }
+
   public async getLeafStatus(leafIndex: bigint): Promise<LeafStatus> {
-    const slot = this.getStorageSlot(leafIndex);
-    const res = await fetch(this.rpcUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: 1,
-        method: "eth_getStorageAt",
-        params: [this.nonceManagerAddress, slot, "latest"],
-      }),
-    });
-    const data = (await res.json()) as { result?: Hex };
-    const rawVal = data.result || "0x0";
-    const seq = BigInt(rawVal);
+    const nonceKey = this.deriveNonceKey(leafIndex);
+    const storageSlot = this.getStorageSlot(nonceKey);
+    const onChainSequence = await this.getOnChainSequence(nonceKey);
+
+    let state: LeafState = "UNUSED";
+    if (onChainSequence > 0n) {
+      state = "MINED";
+    } else {
+      const journalEntry = this.journal.get(leafIndex.toString());
+      if (journalEntry) {
+        state = journalEntry.state;
+      }
+    }
+
     return {
       leafIndex,
-      storageSlot: slot,
-      sequence: seq,
-      isSpent: seq > 0n,
+      nonceKey,
+      storageSlot,
+      onChainSequence,
+      localState: state,
+      isAvailable: state === "UNUSED",
     };
   }
 
   public async scanLeaves(startIndex: bigint, count: number): Promise<LeafStatus[]> {
-    const promises: Promise<LeafStatus>[] = [];
+    const results: LeafStatus[] = [];
     for (let i = 0; i < count; i++) {
-      promises.push(this.getLeafStatus(startIndex + BigInt(i)));
+      results.push(await this.getLeafStatus(startIndex + BigInt(i)));
     }
-    return Promise.all(promises);
+    return results;
+  }
+
+  public async allocateLeaf(): Promise<bigint> {
+    while (true) {
+      const status = await this.getLeafStatus(this.cursor);
+      const allocatedIndex = this.cursor;
+      this.cursor += 1n;
+
+      if (status.isAvailable) {
+        this.journal.set(allocatedIndex.toString(), {
+          leafIndex: allocatedIndex.toString(),
+          state: "RESERVED",
+          timestamp: Date.now(),
+        });
+        return allocatedIndex;
+      }
+    }
+  }
+
+  public async allocateParallelLeaves(count: number): Promise<bigint[]> {
+    const leaves: bigint[] = [];
+    for (let i = 0; i < count; i++) {
+      leaves.push(await this.allocateLeaf());
+    }
+    return leaves;
+  }
+
+  public async bumpFee(oldLeafIndex: bigint, reason: string = "Fee bump replacement"): Promise<{ newLeafIndex: bigint; burnedOldLeafIndex: bigint }> {
+    this.journal.set(oldLeafIndex.toString(), {
+      leafIndex: oldLeafIndex.toString(),
+      state: "BURNED",
+      timestamp: Date.now(),
+      reason,
+    });
+
+    const newLeafIndex = await this.allocateLeaf();
+    return {
+      newLeafIndex,
+      burnedOldLeafIndex: oldLeafIndex,
+    };
+  }
+
+  public async recoverWallet(scanWindow: number = 64, safetyGap: number = 16): Promise<{ highestMinedLeaf: bigint | null; resumeIndex: bigint }> {
+    let highestMined: bigint | null = null;
+
+    for (let i = 0; i < scanWindow; i++) {
+      const idx = BigInt(i);
+      const nonceKey = this.deriveNonceKey(idx);
+      const seq = await this.getOnChainSequence(nonceKey);
+      if (seq > 0n) {
+        highestMined = idx;
+      }
+    }
+
+    const resumeIndex = highestMined !== null 
+      ? highestMined + 1n + BigInt(safetyGap) 
+      : BigInt(safetyGap);
+
+    this.cursor = resumeIndex;
+    return {
+      highestMinedLeaf: highestMined,
+      resumeIndex,
+    };
+  }
+
+  public exportJournal(): JournalEntry[] {
+    return Array.from(this.journal.values());
   }
 
   public routeMempool(verificationGas: number, isStaked: boolean): MempoolRouteDecision {
-    const CANONICAL_CAP = 100_000;
-    const ALT_MEMPOOL_CAP = 2_000_000;
-
-    if (verificationGas <= CANONICAL_CAP) {
+    if (verificationGas <= this.canonicalCap) {
       return {
         verificationGas,
         targetMempool: "canonical",
         admitted: true,
-        reason: `Within canonical mempool limit (${verificationGas.toLocaleString()} <= 100,000 gas).`,
+        reason: `Within canonical mempool validation ceiling (${verificationGas.toLocaleString()} <= ${this.canonicalCap.toLocaleString()} gas).`,
       };
     }
 
-    if (verificationGas > ALT_MEMPOOL_CAP) {
+    if (verificationGas > this.altMempoolCap) {
       return {
         verificationGas,
         targetMempool: "alt-mempool",
         admitted: false,
-        reason: `Exceeds alternative mempool ceiling (${verificationGas.toLocaleString()} > 2,000,000 gas).`,
+        reason: `Exceeds alternative mempool ceiling (${verificationGas.toLocaleString()} > ${this.altMempoolCap.toLocaleString()} gas).`,
       };
     }
 
@@ -103,7 +225,7 @@ export class LeafManager {
         verificationGas,
         targetMempool: "alt-mempool",
         admitted: false,
-        reason: `Unstaked entity capped at 100,000 gas. Current verification requires ${verificationGas.toLocaleString()} gas. Requires 0.012 ETH deposit in NaiveStakingRegistry.`,
+        reason: `Unstaked entity capped at ${this.canonicalCap.toLocaleString()} gas. Current verification requires ${verificationGas.toLocaleString()} gas. Requires stake deposit in NaiveStakingRegistry.`,
       };
     }
 
@@ -111,7 +233,7 @@ export class LeafManager {
       verificationGas,
       targetMempool: "alt-mempool",
       admitted: true,
-      reason: `Admitted into ERC-8421 alternative mempool (${verificationGas.toLocaleString()} <= 2,000,000 gas) with active collateral.`,
+      reason: `Admitted into ERC-8421 alternative mempool (${verificationGas.toLocaleString()} <= ${this.altMempoolCap.toLocaleString()} gas) with active collateral.`,
     };
   }
 }

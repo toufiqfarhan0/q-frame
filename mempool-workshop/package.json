@@ -18,6 +18,8 @@
     "step_11_debug": "tsx src/steps/step_11_debug.ts",
     "step_12_tx_keyed_nonces": "tsx src/steps/step_12_tx_keyed_nonces.ts",
     "step_13_tx_recent_roots": "tsx src/steps/step_13_tx_recent_roots.ts",
+    "step_14_leaf_manager_demo": "tsx src/steps/step_14_leaf_manager_demo.ts",
+    "leaf_demo": "tsx src/steps/step_14_leaf_manager_demo.ts",
     "step_pq_benchmark": "tsx src/steps/step_pq_benchmark.ts",
     "demo": "tsx src/steps/step_pq_benchmark.ts",
     "reset_reputation": "tsx src/commands/reset_reputation.ts",

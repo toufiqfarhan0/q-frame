@@ -88,7 +88,17 @@ It is important to emphasize that **safe fee-bumping with one-time keys remains 
 
 ## The Q-Frame LeafManager SDK
 
-To address the practical operational challenges of stateful post-quantum hash trees, we packaged our EIP-8250 research into a modular client SDK ([`mempool-workshop/src/sdk/LeafManager.ts`](./mempool-workshop/src/sdk/LeafManager.ts)):
+To address the practical operational challenges of stateful post-quantum hash trees, we packaged our EIP-8250 research into a modular client SDK ([`mempool-workshop/src/sdk/LeafManager.ts`](./mempool-workshop/src/sdk/LeafManager.ts)).
+
+### The Core Problem: "On-Chain Spent" $\neq$ "Signature Revealed"
+A stateful hash-based leaf is exposed as soon as a transaction is signed and broadcast. If the transaction drops or gets abandoned in the mempool, its on-chain sequence remains `0`. If a user restores their wallet on a new device, a naive on-chain scan would re-allocate that unmined leaf, revealing a second signature and destroying the account's security.
+
+### Four-State Key Lifecycle & Safety Invariants
+The `LeafManager` manages a robust four-state machine:
+* **`UNUSED`**: Unspent on-chain and not present in local journal (safe to allocate).
+* **`RESERVED`**: Written to a local **write-ahead journal** immediately upon allocation before signing; never re-allocated even if the transaction fails.
+* **`MINED`**: Sequence $\ge 1$ verified in `NONCE_MANAGER` storage (`0x...8250`).
+* **`BURNED`**: Explicitly retired via fee-bumping or cancellation policy.
 
 ```typescript
 import { LeafManager } from "./src/sdk/LeafManager.js";
@@ -96,26 +106,39 @@ import { LeafManager } from "./src/sdk/LeafManager.js";
 const manager = new LeafManager({
   rpcUrl: "https://rpc1.hegota.ethrex.xyz",
   walletAddress: "0xe5c5A34833db3A90E30adCD98f2955E36496483B",
+  canonicalCap: 100_000,
+  altMempoolCap: 2_000_000,
 });
 
-// 1. Query on-chain nullifier state for OTS leaf #7 from NONCE_MANAGER (0x...8250)
-const status = await manager.getLeafStatus(7n);
-console.log(`Leaf #7 spent: ${status.isSpent}, on-chain seq: ${status.sequence}`);
+// 1. Allocate parallel unspent channels (marked RESERVED in write-ahead journal)
+const [leafA, leafB, leafC] = await manager.allocateParallelLeaves(3);
 
-// 2. Discover next available unspent leaf after wallet recovery (zero off-chain sync required)
-const nextLeaf = await manager.getNextAvailableLeaf();
+// 2. Safe Fee-Bumping: burns Leaf #A forever and allocates fresh replacement channel
+const bump = await manager.bumpFee(leafA, "Gas escalation");
+console.log(`Burned: #${bump.burnedOldLeafIndex}, Replacement: #${bump.newLeafIndex}`);
 
-// 3. Allocate 3 parallel independent channels for concurrent mempool dispatch
-const [channelA, channelB, channelC] = await manager.allocateParallelLeaves(3);
+// 3. Zero-State Wallet Recovery with Skip-Ahead Gap
+// Scans highest on-chain mined leaf and jumps forward (+16 leaves) to protect unmined signatures
+const recovery = await manager.recoverWallet(64, 16);
+console.log(`Highest mined: #${recovery.highestMinedLeaf}, Resuming allocation at: #${recovery.resumeIndex}`);
 
-// 4. Determine mempool admission route based on verification gas & staking status
-const route = manager.routeMempool(259_247, true);
-// => { targetMempool: "alt-mempool", admitted: true, reason: "Admitted into ERC-8421 alternative mempool..." }
+// 4. Mempool Admission Routing
+const decision = manager.routeMempool(259_247, true);
+// => { targetMempool: "alt-mempool", admitted: true, reason: "Admitted into ERC-8421..." }
 ```
 
-The SDK is verified via 6 unit tests (`yarn test` in `mempool-workshop/test/LeafManager.test.ts`), confirming:
-* Exact mathematical compatibility with the EIP-8250 storage layout (`keccak256(pad32(sender) || pad32(key))`).
-* Strict canonical ($100\text{k}$) and alternative mempool ($2\text{M}$) routing decisions.
+### Live Devnet Verification (`yarn leaf_demo`)
+Run the live devnet verification script:
+```bash
+cd mempool-workshop
+yarn leaf_demo
+```
+**Executed on Hegotá Devnet (Block `#2782`):**
+1. Allocates 3 parallel leaf channels (`#0, #1, #2`).
+2. Demonstrates safe fee-bumping: marks `#0` as `BURNED` and allocates `#3`.
+3. Broadcasts frame transaction with namespaced key for Leaf `#3` to the live devnet.
+4. Mined in Block `#2782`; queries `NONCE_MANAGER` via `eth_getStorageAt` and confirms sequence moved $0 \to 1$.
+5. Simulates wallet recovery on a fresh device without local journal: scans on-chain storage, finds highest mined leaf (`#3`), applies the safety gap (+16), and safely resumes at Leaf `#20`, successfully skipping unmined Leaf `#1`.
 
 ---
 

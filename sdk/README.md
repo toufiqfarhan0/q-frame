@@ -104,6 +104,33 @@ console.log(decision);
 // }
 ```
 
+### 6. Multi-Device Arkiv DB-Chain Ephemeral Journal
+
+To solve device desynchronization and eliminate key-reuse attacks without relying on a centralized database, `LeafManager` connects directly to the **Arkiv Rabdi DB-Chain Testnet** (`Chain ID: 7794095`):
+
+```typescript
+import { LeafManager, fetchArkivReservations } from "q-frame-sdk";
+
+const manager = new LeafManager({
+  rpcUrl: "https://rpc1.hegota.ethrex.xyz",
+  walletAddress: "0xe5c5a31c51db316231eb93a8e999c0ec28a8483b",
+  arkivConfig: {
+    defaultTtlMinutes: 10, // 10-minute native block expiration
+  },
+});
+
+// 1. Synchronize in-flight reservations across all user devices / relayers
+const newSyncCount = await manager.syncWithArkiv();
+console.log(`Imported ${newSyncCount} active leaf reservations from Arkiv DB-Chain.`);
+
+// 2. Publish an ephemeral reservation to Arkiv with native auto-expiring TTL
+const { entityKey, txHash } = await manager.publishToArkiv(0n, {
+  ethereumProvider: window.ethereum,
+});
+```
+
+* **Native Auto-Expiring TTL**: If an alternative mempool transaction drops without being mined, Arkiv's native expiring-entity engine automatically prunes the record after 10 minutes, safely returning the leaf channel to `UNUSED` without any centralized backend server or cron worker.
+
 ---
 
 ## API Reference

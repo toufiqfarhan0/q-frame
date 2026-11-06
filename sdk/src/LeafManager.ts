@@ -1,4 +1,10 @@
 import { concat, keccak256, numberToHex, pad, toBytes, type Address, type Hex } from "viem";
+import {
+  fetchArkivReservations,
+  publishArkivReservation,
+  type ArkivConfig,
+  type ArkivJournalRecord,
+} from "./arkiv";
 
 export const NONCE_MANAGER_ADDRESS = "0x0000000000000000000000000000000000008250" as const;
 export const DEFAULT_DOMAIN_NAMESPACE = "Q_FRAME_WOTS_LEAF_V1";
@@ -36,6 +42,7 @@ export interface LeafManagerConfig {
   canonicalCap?: number;
   altMempoolCap?: number;
   initialJournal?: JournalEntry[];
+  arkivConfig?: ArkivConfig;
 }
 
 /**
@@ -63,6 +70,7 @@ export class LeafManager {
   public readonly domainNamespace: string;
   public readonly canonicalCap: number;
   public readonly altMempoolCap: number;
+  public readonly arkivConfig?: ArkivConfig;
 
   private journal: Map<string, JournalEntry> = new Map();
   private cursor: bigint = 0n;
@@ -74,6 +82,7 @@ export class LeafManager {
     this.domainNamespace = config.domainNamespace || DEFAULT_DOMAIN_NAMESPACE;
     this.canonicalCap = config.canonicalCap ?? 100_000;
     this.altMempoolCap = config.altMempoolCap ?? 2_000_000;
+    this.arkivConfig = config.arkivConfig;
 
     if (config.initialJournal) {
       for (const entry of config.initialJournal) {
@@ -266,6 +275,64 @@ export class LeafManager {
    */
   public exportJournal(): JournalEntry[] {
     return Array.from(this.journal.values());
+  }
+
+  /**
+   * Synchronizes the local write-ahead journal with Arkiv DB-Chain (Rabdi Testnet Chain ID 7794095).
+   * Fetches active time-scoped reservations (with native 10m TTL) for this wallet.
+   * Multi-device synchronization: reservations made on other devices/relayers are imported
+   * locally to prevent OTS key collisions.
+   */
+  public async syncWithArkiv(): Promise<number> {
+    try {
+      const records = await fetchArkivReservations(
+        this.walletAddress,
+        this.arkivConfig?.accessKey
+      );
+      let newEntriesCount = 0;
+      for (const rec of records) {
+        const leafStr = rec.leafIndex.toString();
+        if (!this.journal.has(leafStr)) {
+          this.journal.set(leafStr, {
+            leafIndex: leafStr,
+            state: rec.action === "BURN" ? "BURNED" : "RESERVED",
+            timestamp: Date.now(),
+            reason: `Synced from Arkiv DB-Chain entity ${rec.key}`,
+          });
+          newEntriesCount++;
+        }
+      }
+      return newEntriesCount;
+    } catch (e) {
+      console.warn("[LeafManager] Arkiv sync notice:", e);
+      return 0;
+    }
+  }
+
+  /**
+   * Publishes a leaf reservation directly to Arkiv DB-Chain with native auto-expiring TTL.
+   */
+  public async publishToArkiv(
+    leafIndex: bigint,
+    options?: {
+      action?: "RESERVE" | "BURN" | "COMMIT";
+      ttlMinutes?: number;
+      ethereumProvider?: any;
+    }
+  ): Promise<{ entityKey: string; txHash: string }> {
+    const nonceKey = this.deriveNonceKey(leafIndex);
+    const nonceKeyHex = ("0x" + nonceKey.toString(16)) as Hex;
+    return publishArkivReservation(
+      this.walletAddress,
+      Number(leafIndex),
+      nonceKeyHex,
+      options?.action ?? "RESERVE",
+      {
+        ttlMinutes: options?.ttlMinutes ?? this.arkivConfig?.defaultTtlMinutes ?? 10,
+        accessKey: this.arkivConfig?.accessKey,
+        ethereumProvider: options?.ethereumProvider,
+      }
+    );
   }
 
   /**

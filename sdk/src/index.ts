@@ -9,3 +9,16 @@ export {
   type LeafManagerConfig,
 } from "./LeafManager";
 
+export {
+  ARKIV_CHAIN_ID,
+  ARKIV_CHAIN_ID_HEX,
+  ARKIV_RPC_URL,
+  ARKIV_EXPLORER_URL,
+  ARKIV_FAUCET_URL,
+  LeafReservation,
+  getArkivPublicClient,
+  fetchArkivReservations,
+  publishArkivReservation,
+  type ArkivJournalRecord,
+  type ArkivConfig,
+} from "./arkiv";

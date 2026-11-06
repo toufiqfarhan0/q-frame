@@ -78,14 +78,14 @@ export async function POST(req: Request) {
         });
       }
 
-      if (calculatedGas > 1000000) {
+      if (calculatedGas > 2000000) {
         return NextResponse.json({
           ok: false,
           rejected: true,
           action: "transact_pq",
           calculatedGas,
           isStaked: true,
-          reason: `EXCEEDS_MAX_BUDGET: Verification requires ${calculatedGas.toLocaleString()} gas, which exceeds the absolute 1,000,000 gas per-entity cap.`,
+          reason: `EXCEEDS_MAX_BUDGET: Verification requires ${calculatedGas.toLocaleString()} gas, which exceeds the expanded 2,000,000 gas per-entity cap.`,
         });
       }
 

@@ -44,7 +44,7 @@ See [`FEEDBACK.md`](./FEEDBACK.md) for devnet developer experience notes, client
 Post-quantum signature schemes cannot run within Ethereum's standard mempool:
 * **The Computational Burden:** State-of-the-art hash-based schemes (NIST FIPS 205 / SLH-DSA / SPHINCS+) require between **200,000 and 300,000 gas** to verify on-chain (Nethermind benchmarks indicate ~276,000 gas for baseline parameter sets).
 * **The Canonical Mempool Bound:** Canonical EIP-8141 mempools strictly cap frame verification gas at **100,000 gas** (`MAX_VERIFY_GAS`) to prevent P2P gossip Denial-of-Service (DoS) attacks.
-* **The ERC-8421 Solution:** By locking collateral in an on-chain staking registry (`NaiveStakingRegistry`), senders unlock an extended verification ceiling of **1,000,000 gas** (`MAX_VERIFY_GAS_PER_ENTITY`) in the alternative mempool sidecar.
+* **The ERC-8421 Solution:** By locking collateral in an on-chain staking registry (`NaiveStakingRegistry`), senders unlock an extended verification ceiling of **2,000,000 gas** (`MAX_VERIFY_GAS_PER_ENTITY`, recently expanded from 1,000,000 gas by the EF Access Layer team) in the alternative mempool sidecar.
 
 ---
 
@@ -89,13 +89,14 @@ All benchmarks are measured from our Foundry test suite (`contracts/test/GasCurv
 The verification gas model is calibrated as:
 $$\text{Gas} = 37,247 + (\text{Chains} \times \text{Iterations} \times 740)$$
 
-| Configuration Profile | Chains $\times$ Iters | Verification Gas | Canonical Mempool (100k Cap) | Staked Alt-Mempool (1M Cap) |
+| Configuration Profile | Chains $\times$ Iters | Verification Gas | Canonical Mempool (100k Cap) | Staked Alt-Mempool (2M Cap) |
 | :--- | :---: | :---: | :---: | :---: |
 | **Minimal Baseline** | $4 \times 10$ | 66,847 gas | **Admitted** | **Admitted** |
 | **Threshold Cross** | $8 \times 15$ | 126,047 gas | <span style="color:red">**Rejected** (>100k)</span> | **Admitted** |
 | **Q-Frame Calibrated (FIPS 205)** | $15 \times 20$ | 259,247 gas | <span style="color:red">**Rejected** (Hard Wall)</span> | **Admitted & Mined** |
 | **High-Security SPHINCS+** | $20 \times 30$ | 481,247 gas | <span style="color:red">**Rejected** (>100k)</span> | **Admitted** |
-| **Peak Stress Limit** | $30 \times 40$ | 925,247 gas | <span style="color:red">**Rejected** (>100k)</span> | **Admitted** (<1M) |
+| **Deep SPHINCS+ Trees** | $30 \times 50$ | 1,147,247 gas | <span style="color:red">**Rejected** (>100k)</span> | **Admitted (<2M)** |
+| **Peak 2M Stress Limit** | $35 \times 75$ | 1,980,247 gas | <span style="color:red">**Rejected** (>100k)</span> | **Admitted (<2M)** |
 
 See [checkpoint 1A](./reviews/CHECKPOINT_1A.md) for full gas curve plots and derivations.
 

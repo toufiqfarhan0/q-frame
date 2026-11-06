@@ -527,7 +527,7 @@ export default function Home() {
           txHash: data.txHash,
           blockNumber: data.blockNumber,
           gasUsed: data.gasUsed,
-          message: `ADMITTED & MINED: Verification budget ${data.calculatedGas?.toLocaleString()} gas fits within the 1,000,000 gas staked entity ceiling. Confirmed on Hegotá Devnet in Block #${data.blockNumber}.`,
+          message: `ADMITTED & MINED: Verification budget ${data.calculatedGas?.toLocaleString()} gas fits within the 2,000,000 gas staked entity ceiling. Confirmed on Hegotá Devnet in Block #${data.blockNumber}.`,
           timestamp: new Date().toLocaleTimeString(),
         });
       } else {
@@ -552,7 +552,7 @@ export default function Home() {
   // Base cost ~37,247 gas + chain overhead
   const calculatedGas = Math.round(37247 + chains * iterations * 740);
   const canonicalCap = 100000;
-  const altMempoolCap = 1000000;
+  const altMempoolCap = 2000000;
   const isCanonicalRejected = calculatedGas > canonicalCap;
   const isAltMempoolAdmitted = calculatedGas <= altMempoolCap;
 
@@ -997,7 +997,7 @@ export default function Home() {
                 Standard Ethereum nodes reject post-quantum cryptography because NIST FIPS 205 (SPHINCS+) 
                 verification demands over <strong>200,000 gas</strong>, hitting the hard 100k mempool validation wall. 
                 <strong> Q-Frame</strong> leverages <strong>EIP-8141</strong> frame transactions and <strong>ERC-8421</strong> staked alternative 
-                mempools to elevate validation capacity to <strong>1,000,000 gas</strong>.
+                mempools to elevate validation capacity to <strong>2,000,000 gas</strong>.
               </p>
 
               <div className="flex flex-wrap items-center gap-4 pt-2">
@@ -1029,7 +1029,7 @@ export default function Home() {
                 </div>
                 <div>
                   <div className="text-[#A9B2B1] uppercase text-[10px]">Staked Gas Ceiling</div>
-                  <div className="font-bold text-[#D82C2C] mt-1">1,000,000 GAS (+900%)</div>
+                  <div className="font-bold text-[#D82C2C] mt-1">2,000,000 GAS (+1,900%)</div>
                 </div>
               </div>
             </div>
@@ -1060,7 +1060,7 @@ export default function Home() {
                   </div>
                   <div className="p-3 bg-[#D82C2C]/15 border border-[#D82C2C]/40">
                     <div className="text-[#D82C2C] text-[10px] font-bold">ERC-8421 STAKED</div>
-                    <div className="text-white font-bold text-sm mt-1">1,000,000 GAS</div>
+                    <div className="text-white font-bold text-sm mt-1">2,000,000 GAS</div>
                     <div className="text-[#A9B2B1] text-[10px] mt-0.5">Staked Entity Limit</div>
                   </div>
                 </div>
@@ -1376,7 +1376,7 @@ export default function Home() {
                 </div>
                 <p className="text-sm text-white/80 mt-3 leading-relaxed">
                   Sender deposits 0.012 ETH stake into <code className="text-xs bg-white/10 px-1 py-0.5">NaiveStakingRegistry</code>. 
-                  The sidecar unlocks the <strong>1,000,000 gas</strong> allowance. The heavy post-quantum 
+                  The sidecar unlocks the <strong>2,000,000 gas</strong> allowance. The heavy post-quantum 
                   validation succeeds and gets included in the next block.
                 </p>
               </div>
@@ -1504,16 +1504,16 @@ export default function Home() {
                   <input
                     type="range"
                     min="1"
-                    max="25"
+                    max="35"
                     step="1"
                     value={chains}
                     onChange={(e) => setChains(Number(e.target.value))}
                     className="w-full cursor-pointer h-2 bg-[#F2F2F2] rounded-none appearance-none"
                   />
                   <div className="flex justify-between text-[11px] font-swiss-mono text-[#A9B2B1]">
-                    <span>1 (Trivial Toy Hash)</span>
-                    <span>15 (Calibrated NIST FIPS 205)</span>
-                    <span>25 (High Security Bound)</span>
+                    <span>1 (Toy)</span>
+                    <span>15 (NIST FIPS 205)</span>
+                    <span>35 (Heavy PQ Tree)</span>
                   </div>
                 </div>
 
@@ -1528,7 +1528,7 @@ export default function Home() {
                   <input
                     type="range"
                     min="5"
-                    max="50"
+                    max="75"
                     step="1"
                     value={iterations}
                     onChange={(e) => setIterations(Number(e.target.value))}
@@ -1537,7 +1537,7 @@ export default function Home() {
                   <div className="flex justify-between text-[11px] font-swiss-mono text-[#A9B2B1]">
                     <span>5 Iterations</span>
                     <span>20 (Calibrated Baseline)</span>
-                    <span>50 (Extreme Stress Test)</span>
+                    <span>75 (2.0M Stress Limit)</span>
                   </div>
                 </div>
 
@@ -1625,14 +1625,14 @@ export default function Home() {
                 {/* Status 2: Q-Frame Staked Alt Mempool */}
                 <div className="p-4 bg-[#1A1A1A] text-white space-y-1">
                   <div className="flex items-center justify-between text-xs font-swiss-mono">
-                    <span className="text-white/60">Q-FRAME STAKED POOL (1.0M CAP)</span>
+                    <span className="text-white/60">Q-FRAME STAKED POOL (2.0M CAP)</span>
                     {isAltMempoolAdmitted ? (
                       <span className="text-emerald-400 font-bold flex items-center gap-1">
                         <CheckCircle2 className="w-3.5 h-3.5" /> ADMITTED & MINED
                       </span>
                     ) : (
                       <span className="text-[#D82C2C] font-bold flex items-center gap-1">
-                        <XCircle className="w-3.5 h-3.5" /> EXCEEDED 1M CAP
+                        <XCircle className="w-3.5 h-3.5" /> EXCEEDED 2M CAP
                       </span>
                     )}
                   </div>
@@ -1646,14 +1646,14 @@ export default function Home() {
                   </div>
                   <div className="text-[11px] font-swiss-mono text-white/60 pt-1">
                     {isAltMempoolAdmitted
-                      ? `${((calculatedGas / altMempoolCap) * 100).toFixed(1)}% of 1,000,000 gas allowance utilized`
+                      ? `${((calculatedGas / altMempoolCap) * 100).toFixed(1)}% of 2,000,000 gas allowance utilized`
                       : "Exceeds alternative mempool limit"}
                   </div>
 
                   <div className="flex items-center justify-between text-[11px] font-swiss-mono pt-2 border-t border-white/10">
                     <span className="text-white/60">COLLATERAL STATE:</span>
                     <span className={isStaked ? "text-emerald-400 font-bold" : "text-amber-400 font-bold"}>
-                      {isStaked ? "STAKED (0.012 ETH - 1M CEILING UNLOCKED)" : "UNSTAKED (100k CAP)"}
+                      {isStaked ? "STAKED (0.012 ETH - 2M CEILING UNLOCKED)" : "UNSTAKED (100k CAP)"}
                     </span>
                   </div>
 
@@ -1670,7 +1670,7 @@ export default function Home() {
                     ) : (
                       <>
                         <ArrowRight className="w-3 h-3 text-black" />
-                        <span>TRANSACT ON Q-FRAME ALT-MEMPOOL (1M ALLOWANCE)</span>
+                        <span>TRANSACT ON Q-FRAME ALT-MEMPOOL (2M ALLOWANCE)</span>
                       </>
                     )}
                   </button>
@@ -1728,7 +1728,7 @@ export default function Home() {
 
                   <p className="text-xs text-[#1A1A1A]/70 leading-relaxed font-swiss-mono">
                     {walletAddress
-                      ? `Connected as ${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}. Deposit 0.012 ETH stake to unlock the 1,000,000 gas allowance.`
+                      ? `Connected as ${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}. Deposit 0.012 ETH stake to unlock the 2,000,000 gas allowance.`
                       : "Connect your Web3 wallet (MetaMask, Coinbase Wallet) or use the pre-funded devnet account to deposit stake and test this live on-chain."}
                   </p>
 
@@ -2000,7 +2000,7 @@ export default function Home() {
                   <ul className="mt-6 space-y-3 text-xs font-swiss-mono text-white/90">
                     <li className="flex items-center gap-2">
                       <span className="w-1.5 h-1.5 bg-[#D82C2C]" />
-                      <span className="font-bold">1,000,000 Validation Gas (+900%)</span>
+                      <span className="font-bold">2,000,000 Validation Gas (+1,900%)</span>
                     </li>
                     <li className="flex items-center gap-2">
                       <span className="w-1.5 h-1.5 bg-[#D82C2C]" />

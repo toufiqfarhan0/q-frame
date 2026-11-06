@@ -718,37 +718,60 @@ export default function Home() {
             </p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {/* Citation 1 */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            {/* Citation 1: NIST FIPS 205 */}
             <div className="p-6 bg-white swiss-border flex flex-col justify-between">
               <p className="text-sm text-[#1A1A1A]/85 italic leading-relaxed font-sans">
                 &ldquo;Stateless hash-based signatures standardized in NIST FIPS 205 (SLH-DSA) guarantee security against quantum computers, but require evaluating deep hash trees that far exceed existing blockchain validation bounds.&rdquo;
               </p>
               <div className="mt-6 pt-4 swiss-border-t">
                 <div className="font-bold text-sm font-swiss-display text-[#1A1A1A]">NIST FIPS 205</div>
-                <div className="text-xs font-swiss-mono text-[#A9B2B1]">Post-Quantum Cryptography Standard</div>
+                <div className="text-xs font-swiss-mono text-[#D82C2C] font-semibold">Post-Quantum Cryptography Standard</div>
+                <div className="text-[11px] font-swiss-mono text-[#1A1A1A]/70 mt-1">
+                  <strong>Authors:</strong> D. Cooper, D. Apon, R. Perlner, A. Robinson, C. Miller (NIST) · SPHINCS+ Designers: D.J. Bernstein, P. Schwabe et al.
+                </div>
               </div>
             </div>
 
-            {/* Citation 2 */}
+            {/* Citation 2: EIP-8141 */}
             <div className="p-6 bg-white swiss-border flex flex-col justify-between">
               <p className="text-sm text-[#1A1A1A]/85 italic leading-relaxed font-sans">
                 &ldquo;EIP-8141 introduces frame transactions so verification, execution, and gas sponsorship are decoupled. The APPROVE opcode formalizes valid authorization without requiring full account abstraction predeploys.&rdquo;
               </p>
               <div className="mt-6 pt-4 swiss-border-t">
                 <div className="font-bold text-sm font-swiss-display text-[#1A1A1A]">EIP-8141 Spec</div>
-                <div className="text-xs font-swiss-mono text-[#A9B2B1]">Frame Transactions Core Draft</div>
+                <div className="text-xs font-swiss-mono text-[#D82C2C] font-semibold">Frame Transactions Core Draft</div>
+                <div className="text-[11px] font-swiss-mono text-[#1A1A1A]/70 mt-1">
+                  <strong>Authors:</strong> Vitalik Buterin, Yoav Weiss, Alex Forshtat, Dror Tirosh, Shahaf Nacson
+                </div>
               </div>
             </div>
 
-            {/* Citation 3 */}
+            {/* Citation 3: ERC-8421 & Ethrex */}
             <div className="p-6 bg-white swiss-border flex flex-col justify-between">
               <p className="text-sm text-[#1A1A1A]/85 italic leading-relaxed font-sans">
                 &ldquo;ERC-8421 establishes alternative mempools with reputation staking. By holding economic stake in a registry contract, participants protect nodes from uncompensated computation.&rdquo;
               </p>
               <div className="mt-6 pt-4 swiss-border-t">
                 <div className="font-bold text-sm font-swiss-display text-[#1A1A1A]">ERC-8421 &amp; Ethrex</div>
-                <div className="text-xs font-swiss-mono text-[#A9B2B1]">LambdaClass &amp; EF Research</div>
+                <div className="text-xs font-swiss-mono text-[#D82C2C] font-semibold">LambdaClass &amp; EF Research</div>
+                <div className="text-[11px] font-swiss-mono text-[#1A1A1A]/70 mt-1">
+                  <strong>Authors:</strong> Federico Carrone &amp; LambdaClass Team · Ethereum Foundation Research
+                </div>
+              </div>
+            </div>
+
+            {/* Citation 4: Arkiv DB-Chain & EIP-8250 */}
+            <div className="p-6 bg-white swiss-border flex flex-col justify-between">
+              <p className="text-sm text-[#1A1A1A]/85 italic leading-relaxed font-sans">
+                &ldquo;Decentralized Write-Ahead Journals with native block-based expiration ensure multi-device OTS key coordination, preventing post-quantum double-signing without a central database.&rdquo;
+              </p>
+              <div className="mt-6 pt-4 swiss-border-t">
+                <div className="font-bold text-sm font-swiss-display text-[#1A1A1A]">Arkiv DB-Chain &amp; EIP-8250</div>
+                <div className="text-xs font-swiss-mono text-[#D82C2C] font-semibold">Time-Scoped Decentralized State</div>
+                <div className="text-[11px] font-swiss-mono text-[#1A1A1A]/70 mt-1">
+                  <strong>Authors:</strong> Arkiv Network Architecture Team · Golem Factory
+                </div>
               </div>
             </div>
           </div>

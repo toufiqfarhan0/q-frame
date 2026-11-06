@@ -272,6 +272,30 @@ To solve multi-device state synchronization and eliminate key-reuse attacks for 
   - [`arkiv/how-you-use-arkiv.md`](./arkiv/how-you-use-arkiv.md) — Indexed filters, permissions, and UI visibility.
   - [`arkiv/reach.md`](./arkiv/reach.md) — Target users, ecosystem reach, and post-Mumbai roadmap.
   - [`arkiv/friction.md`](./arkiv/friction.md) — Detailed developer feedback and friction log for `@arkiv-network/sdk`.
+  - [`arkiv/feedback.md`](./arkiv/feedback.md) — Formal developer experience report and improvement suggestions.
+
+---
+
+## Production SDK & Independent Verification App
+
+* **Package:** `q-frame-sdk` (v0.1.1)
+* **SDK Source:** [`sdk/`](./sdk/)
+* **Independent Consumer App:** [`test-consumer-app/`](./test-consumer-app/) running on `http://localhost:3001`
+* **Features Exported:**
+  * `LeafManager` (EIP-8250 2D Keyed Nonce allocation, Write-Ahead Journal, Zero-State Recovery)
+  * Native Arkiv DB-Chain integration (`syncWithArkiv()`, `publishToArkiv()`)
+  * Cryptographic Safe Fee Bumping (burning exposed OTS keys)
+  * Mempool Gas Admission Routing (Canonical 100k vs Alt-Mempool 2M)
+
+---
+
+## Scientific Citations & Author Credits
+
+* **NIST FIPS 205 (SLH-DSA / SPHINCS+)**: David Cooper, Daniel Apon, Ray Perlner, Angela Robinson, Carl Miller (NIST) · SPHINCS+ Designers: Jean-Philippe Aumasson, Daniel J. Bernstein, Ward Beullens, Christoph Dobraunig, Maria Eichlseder, Scott Fluhrer, Stefan Kölbl, Peter Schwabe et al.
+* **EIP-8141 (Frame Transactions)**: Vitalik Buterin, Yoav Weiss, Alex Forshtat, Dror Tirosh, Shahaf Nacson.
+* **ERC-8421 & Ethrex Client**: Federico Carrone & LambdaClass Team · Ethereum Foundation Research.
+* **Arkiv DB-Chain & EIP-8250**: Arkiv Network Architecture Team · Golem Factory.
+* **ETHGlobal Submission Details:** [`SUBMISSION.md`](./SUBMISSION.md)
 
 ---
 

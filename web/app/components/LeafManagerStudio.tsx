@@ -45,13 +45,23 @@ interface LeafManagerStudioProps {
 export default function LeafManagerStudio({ userWallet }: LeafManagerStudioProps) {
   const activeWallet = (userWallet && userWallet.startsWith("0x") ? userWallet : DEFAULT_ACCOUNT) as Address;
 
-  // SDK Instance
+  // SDK Instance with LocalStorage Persistence for Write-Ahead Journal
   const manager = useMemo(() => {
+    let savedJournal: JournalEntry[] = [];
+    if (typeof window !== "undefined") {
+      try {
+        const raw = localStorage.getItem(`qframe_journal_${activeWallet}`);
+        if (raw) savedJournal = JSON.parse(raw);
+      } catch (e) {
+        console.warn("Failed to load journal from localStorage", e);
+      }
+    }
     return new LeafManager({
       rpcUrl: RPC_URL,
       walletAddress: activeWallet,
       canonicalCap: 100_000,
       altMempoolCap: 2_000_000,
+      initialJournal: savedJournal,
     });
   }, [activeWallet]);
 
@@ -119,7 +129,13 @@ export default function LeafManagerStudio({ userWallet }: LeafManagerStudioProps
       addLog(`Syncing leaves 0..${scanCount - 1} against NONCE_MANAGER (${NONCE_MANAGER.slice(0, 10)}...) on Hegotá`);
       const scanned = await manager.scanLeaves(0n, scanCount);
       setLeaves(scanned);
-      setJournal(manager.exportJournal());
+      const currentJournal = manager.exportJournal();
+      setJournal(currentJournal);
+      if (typeof window !== "undefined") {
+        try {
+          localStorage.setItem(`qframe_journal_${activeWallet}`, JSON.stringify(currentJournal));
+        } catch {}
+      }
       addLog(`✓ Synchronized ${scanned.length} leaf channels. Mined on-chain: ${scanned.filter((s) => s.localState === "MINED").length}`);
     } catch (err: any) {
       addLog(`✕ Error syncing from devnet: ${err?.message || String(err)}`);
@@ -127,7 +143,7 @@ export default function LeafManagerStudio({ userWallet }: LeafManagerStudioProps
       setIsScanning(false);
       setIsLoading(false);
     }
-  }, [manager, addLog]);
+  }, [manager, addLog, activeWallet]);
 
   useEffect(() => {
     refreshLeaves();
@@ -214,13 +230,19 @@ export default function LeafManagerStudio({ userWallet }: LeafManagerStudioProps
   const handleRecovery = async () => {
     setIsRecovering(true);
     try {
-      addLog(`Simulating zero-state wallet recovery on fresh device (journal cleared)...`);
+      addLog(`Simulating zero-state wallet recovery on fresh device (scanning on-chain nonces)...`);
       addLog(`Scanning on-chain sequence storage in window 0..${scanWindow} on NONCE_MANAGER...`);
       const result = await manager.recoverWallet(scanWindow, safetyGap);
       setRecoveryResult({
         highestMined: result.highestMinedLeaf !== null ? result.highestMinedLeaf.toString() : null,
         resumeIndex: result.resumeIndex.toString(),
       });
+      // Record the safe jump in the Write-Ahead Journal
+      manager.setLeafState(
+        result.resumeIndex,
+        "RESERVED",
+        `Zero-State Recovery: Resumed at #${result.resumeIndex} (+${safetyGap} safety gap)`
+      );
       addLog(`✓ Recovery scan complete: Highest mined leaf is ${result.highestMinedLeaf !== null ? `#${result.highestMinedLeaf}` : "none"}`);
       addLog(`✓ Applied Safety Gap (+${safetyGap} leaves). Safely resuming allocation at Leaf #${result.resumeIndex}!`);
       await refreshLeaves();
@@ -231,13 +253,42 @@ export default function LeafManagerStudio({ userWallet }: LeafManagerStudioProps
     }
   };
 
+  // Handle Commit Route Decision to Journal
+  const handleCommitRouteDecision = async () => {
+    if (!routeDecision || !routeDecision.admitted) {
+      addLog(`✕ Cannot allocate leaf: Route is not admitted (${routeDecision?.reason || "rejected"})`);
+      return;
+    }
+    try {
+      addLog(`Allocating OTS leaf channel for ${routeDecision.targetMempool.toUpperCase()} mempool route...`);
+      const leafIdx = await manager.allocateLeaf();
+      manager.setLeafState(
+        leafIdx,
+        "RESERVED",
+        `Mempool Route: ${routeDecision.targetMempool.toUpperCase()} (${routerGas.toLocaleString()} gas, ${routerIsStaked ? "Staked" : "Unstaked"})`
+      );
+      addLog(`✓ Write-Ahead Journal updated! Leaf #${leafIdx} RESERVED for ${routeDecision.targetMempool.toUpperCase()} mempool.`);
+      await refreshLeaves();
+    } catch (err: any) {
+      addLog(`✕ Failed to commit route to journal: ${err?.message || String(err)}`);
+    }
+  };
+
   // Arkiv DB-Chain Handlers
   const handleQueryArkiv = useCallback(async () => {
     setIsArkivLoading(true);
     addLog(`Querying Arkiv DB-Chain entities for ${activeWallet.slice(0, 10)}... (Rabdi Testnet Chain ID: 7794095)`);
     try {
       const records = await fetchArkivReservations(activeWallet);
-      setArkivEntities(records);
+      setArkivEntities((prev) => {
+        if (records.length === 0) return prev;
+        const seen = new Set(records.map((r) => r.key));
+        const merged = [...records];
+        for (const p of prev) {
+          if (!seen.has(p.key)) merged.push(p);
+        }
+        return merged;
+      });
       addLog(`✓ Synchronized with Arkiv DB-Chain: Found ${records.length} active time-scoped entity records`);
     } catch (err: any) {
       addLog(`✕ Arkiv query notice: ${err?.message || String(err)}`);
@@ -255,7 +306,7 @@ export default function LeafManagerStudio({ userWallet }: LeafManagerStudioProps
       return;
     }
 
-    addLog(`Publishing leaf #${targetLeaf.leafIndex} reservation to Arkiv DB-Chain with 10-minute native TTL...`);
+    addLog(`Initiating post-quantum reservation for Leaf #${targetLeaf.leafIndex} on Arkiv DB-Chain (Rabdi)...`);
     try {
       const ethereum = typeof window !== "undefined" ? (window as any).ethereum : undefined;
       const nonceHex = `0x${targetLeaf.nonceKey.toString(16).padStart(64, "0")}` as `0x${string}`;
@@ -269,7 +320,27 @@ export default function LeafManagerStudio({ userWallet }: LeafManagerStudioProps
       addLog(`✓ Entity registered on Arkiv DB-Chain! Entity Key: ${res.entityKey} (TTL: 10m)`);
       if (res.txHash) {
         addLog(`  Rabdi Tx Hash: ${res.txHash}`);
+        addLog(`  Explorer Link: ${ARKIV_EXPLORER_URL}/tx/${res.txHash}`);
       }
+      setArkivEntities((prev) => [
+        {
+          key: res.entityKey,
+          wallet: activeWallet,
+          leafIndex: Number(targetLeaf.leafIndex),
+          nonceKey: nonceHex,
+          action: "RESERVE",
+          status: "PENDING_MEMPOOL",
+          expiresAtBlock: "In 10m (300 blks)",
+        },
+        ...prev.filter((e) => e.key !== res.entityKey),
+      ]);
+      // Update local write-ahead journal as well!
+      manager.setLeafState(
+        BigInt(targetLeaf.leafIndex),
+        "RESERVED",
+        `Arkiv DB-Chain reservation (10m TTL, Entity: ${res.entityKey.slice(0, 10)}...)`
+      );
+      await refreshLeaves();
       await handleQueryArkiv();
     } catch (err: any) {
       addLog(`✕ Failed to publish to Arkiv: ${err?.message || String(err)}`);
@@ -295,6 +366,11 @@ export default function LeafManagerStudio({ userWallet }: LeafManagerStudioProps
   // Reset Demo State
   const handleReset = async () => {
     manager.resetJournal(0n);
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.removeItem(`qframe_journal_${activeWallet}`);
+      } catch {}
+    }
     setRecoveryResult(null);
     setConsoleLogs([]);
     addLog("SDK journal reset. Re-scanning devnet...");
@@ -700,6 +776,15 @@ export default function LeafManagerStudio({ userWallet }: LeafManagerStudioProps
                       </span>
                     </div>
                     <p className="text-[11px] leading-relaxed opacity-90">{routeDecision.reason}</p>
+                    {routeDecision.admitted && (
+                      <button
+                        onClick={handleCommitRouteDecision}
+                        className="w-full mt-2 py-2 px-3 bg-[#1A1A1A] hover:bg-black text-white font-mono text-[11px] font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-colors"
+                      >
+                        <Zap className="w-3.5 h-3.5 text-amber-400" />
+                        <span>Allocate Leaf &amp; Record Route in Journal</span>
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
@@ -816,15 +901,28 @@ export default function LeafManagerStudio({ userWallet }: LeafManagerStudioProps
                       {arkivEntities.map((ent, idx) => (
                         <div key={idx} className="p-2 bg-purple-50 border border-purple-200 flex items-center justify-between">
                           <div>
-                            <div className="font-bold text-purple-950 text-[11px]">Leaf #{ent.leafIndex} • {ent.action}</div>
-                            <div className="text-[9px] text-[#A9B2B1] truncate max-w-[180px]" title={ent.key}>Key: {ent.key}</div>
+                            <div className="font-bold text-purple-950 text-[11px] flex items-center gap-1.5">
+                              <span>Leaf #{ent.leafIndex} • {ent.action}</span>
+                              <a
+                                href={`${ARKIV_EXPLORER_URL}/search?q=${ent.key}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-purple-600 hover:text-purple-900 underline inline-flex items-center gap-0.5 text-[9px]"
+                              >
+                                <span>Explorer</span>
+                                <ExternalLink className="w-2 h-2" />
+                              </a>
+                            </div>
+                            <div className="text-[9px] text-purple-800 font-mono truncate max-w-[200px]" title={ent.key}>
+                              Key: {ent.key}
+                            </div>
                           </div>
                           <div className="text-right">
                             <span className="text-[10px] font-bold px-1.5 py-0.5 bg-purple-200 text-purple-900 rounded">
                               {ent.status}
                             </span>
                             {ent.expiresAtBlock && (
-                              <div className="text-[9px] text-purple-600 mt-0.5">Exp: Blk #{ent.expiresAtBlock}</div>
+                              <div className="text-[9px] text-purple-600 mt-0.5 font-bold">Exp: {ent.expiresAtBlock}</div>
                             )}
                           </div>
                         </div>

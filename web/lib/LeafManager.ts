@@ -148,6 +148,7 @@ export class LeafManager {
           leafIndex: allocatedIndex.toString(),
           state: "RESERVED",
           timestamp: Date.now(),
+          reason: "Allocated parallel OTS channel",
         });
         return allocatedIndex;
       }
@@ -171,6 +172,12 @@ export class LeafManager {
     });
 
     const newLeafIndex = await this.allocateLeaf();
+    this.journal.set(newLeafIndex.toString(), {
+      leafIndex: newLeafIndex.toString(),
+      state: "RESERVED",
+      timestamp: Date.now(),
+      reason: `Safe Fee Bump replacement for burned Leaf #${oldLeafIndex}`,
+    });
     return {
       newLeafIndex,
       burnedOldLeafIndex: oldLeafIndex,

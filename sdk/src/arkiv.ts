@@ -124,7 +124,11 @@ export async function publishArkivReservation(
         action,
         status: "PENDING_MEMPOOL",
       },
-      { expiration }
+      { expiration },
+      {
+        gas: 1000000n,
+        gasPrice: 1000000000n,
+      }
     );
 
     return {

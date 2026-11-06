@@ -1,0 +1,22 @@
+{
+  "name": "test-consumer-app",
+  "version": "1.0.0",
+  "description": "Clean 3rd-party consumer test application for q-frame-sdk",
+  "main": "src/server.ts",
+  "scripts": {
+    "build": "tsc",
+    "start": "ts-node src/server.ts",
+    "test:live": "ts-node src/live-test.ts"
+  },
+  "dependencies": {
+    "q-frame-sdk": "file:../sdk/q-frame-sdk-0.1.1.tgz",
+    "viem": "^2.23.0",
+    "@arkiv-network/sdk": "^1.0.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "ts-node": "^10.9.2",
+    "@types/node": "^20.0.0"
+  }
+}
+

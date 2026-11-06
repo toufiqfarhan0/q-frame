@@ -61,6 +61,7 @@ export function getArkivPublicClient(accessKey: string = "") {
  * Queries active leaf reservation entities on Arkiv DB-chain for a specific wallet address.
  */
 export async function fetchArkivReservations(walletAddress: string): Promise<ArkivJournalRecord[]> {
+  const records: ArkivJournalRecord[] = [];
   try {
     const client = getArkivPublicClient();
     const result = await client
@@ -70,19 +71,55 @@ export async function fetchArkivReservations(walletAddress: string): Promise<Ark
       .limit(50)
       .fetch();
 
-    return result.entities.map((ent: any) => ({
-      key: ent.$key ?? "unknown-key",
-      wallet: ent.wallet?.value ?? walletAddress,
-      leafIndex: Number(ent.leafIndex?.value ?? 0),
-      nonceKey: ent.nonceKey?.value ?? "",
-      action: ent.action?.value ?? "RESERVE",
-      status: ent.status?.value ?? "PENDING_MEMPOOL",
-      expiresAtBlock: ent.$expiresAt ? String(ent.$expiresAt) : undefined,
-    }));
+    if (result.entities && result.entities.length > 0) {
+      for (const ent of result.entities) {
+        records.push({
+          key: ent.$key ?? "unknown-key",
+          wallet: ent.wallet?.value ?? walletAddress,
+          leafIndex: Number(ent.leafIndex?.value ?? 0),
+          nonceKey: ent.nonceKey?.value ?? "",
+          action: ent.action?.value ?? "RESERVE",
+          status: ent.status?.value ?? "PENDING_MEMPOOL",
+          expiresAtBlock: ent.$expiresAt ? `Block #${ent.$expiresAt}` : undefined,
+        });
+      }
+    }
   } catch (error) {
-    console.warn("[Arkiv] Query failed or empty:", error);
-    return [];
+    console.warn("[Arkiv] Direct RPC query note:", error);
   }
+
+  // Also query local API endpoint for active synced entities
+  try {
+    const res = await fetch(`/api/arkiv?wallet=${walletAddress}`);
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data.entities)) {
+        const seen = new Set(records.map((r) => r.key));
+        for (const e of data.entities) {
+          if (!seen.has(e.key)) {
+            records.push({
+              key: e.key,
+              wallet: e.wallet,
+              leafIndex: e.leafIndex,
+              nonceKey: e.nonceKey,
+              action: e.action,
+              status: e.status,
+              expiresAtBlock: e.expiresAt
+                ? (typeof e.expiresAt === "string" && e.expiresAt.startsWith("In")
+                    ? e.expiresAt
+                    : `Blk #${e.expiresAt}`)
+                : "In 10m (300 blks)",
+            });
+            seen.add(e.key);
+          }
+        }
+      }
+    }
+  } catch (apiErr) {
+    // Ignore in non-browser or offline
+  }
+
+  return records;
 }
 
 /**
@@ -98,28 +135,50 @@ export async function publishArkivReservation(
   const expiration = ExpirationTime.fromMinutes(10);
 
   if (ethereumProvider) {
-    const walletClient = createWalletClient({
-      chain: rabdi({ accessKey: "" }),
-      transport: custom(ethereumProvider),
-      account: userAddress,
-    });
+    try {
+      let chainIdHex = await ethereumProvider.request({ method: "eth_chainId" });
+      let currentChainId = parseInt(chainIdHex, 16);
 
-    const res = await walletClient.createEntity(
-      LeafReservation,
-      {
-        wallet: addr(userAddress),
-        leafIndex: dec(String(leafIndex)),
-        nonceKey: String(nonceKey),
-        action,
-        status: "PENDING_MEMPOOL",
-      },
-      { expiration }
-    );
+      // Auto-prompt MetaMask to switch or add Arkiv Rabdi Testnet
+      if (currentChainId !== ARKIV_CHAIN_ID) {
+        await switchOrAddRabdiNetwork(ethereumProvider);
+        chainIdHex = await ethereumProvider.request({ method: "eth_chainId" });
+        currentChainId = parseInt(chainIdHex, 16);
+      }
 
-    return {
-      entityKey: res.entityKey,
-      txHash: res.txHash,
-    };
+      if (currentChainId === ARKIV_CHAIN_ID) {
+        const walletClient = createWalletClient({
+          chain: rabdi({ accessKey: "" }),
+          transport: custom(ethereumProvider),
+          account: userAddress,
+        });
+
+        // SDK 1.0.1 on Rabdi: specify explicit gas floor of 1M + 1 gwei gasPrice
+        // as per official Arkiv write-safety guidelines for browser wallets
+        const res = await walletClient.createEntity(
+          LeafReservation,
+          {
+            wallet: addr(userAddress),
+            leafIndex: dec(String(leafIndex)),
+            nonceKey: String(nonceKey),
+            action,
+            status: "PENDING_MEMPOOL",
+          },
+          { expiration },
+          {
+            gas: 1000000n,
+            gasPrice: 1000000000n, // 1 gwei
+          }
+        );
+
+        return {
+          entityKey: res.entityKey,
+          txHash: res.txHash,
+        };
+      }
+    } catch (e: any) {
+      console.warn("[Arkiv] Direct wallet submission not available or on wrong network, relaying via onchain API:", e);
+    }
   }
 
   // Fallback to server route

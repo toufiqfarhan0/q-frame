@@ -1,6 +1,6 @@
 {
   "name": "@toufiqfarhan0/q-frame-sdk",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Post-Quantum EIP-8250 Keyed Nonce Client SDK for EIP-8141 Frame Transactions & ERC-8421 Mempools",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",

@@ -82,10 +82,10 @@ export default function Navbar() {
                 {!isDevnet && (
                   <button
                     onClick={switchToDevnet}
-                    className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-amber-500 text-white font-mono text-[11px] font-bold hover:bg-amber-600 transition-colors"
+                    className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-amber-500 text-white font-mono text-[11px] font-bold hover:bg-amber-600 transition-colors cursor-pointer"
                   >
                     <AlertCircle className="w-3 h-3" />
-                    <span>SWITCH TO DEVNET</span>
+                    <span>SWITCH TO HEGOTÁ</span>
                   </button>
                 )}
                 <div className="relative group">
@@ -163,7 +163,15 @@ export default function Navbar() {
                   <div className="p-2.5 bg-[#F2F2F2] border border-[#E2E6E6]">
                     <div className="text-[10px] text-[#A9B2B1] uppercase font-bold">Chain ID</div>
                     <div className="font-bold text-[#1A1A1A]">
-                      {chainId ? `${parseInt(chainId, 16)} (${chainId})` : "Detecting..."}
+                      {chainId ? (
+                        isDevnet ? (
+                          <span className="text-emerald-700">{parseInt(chainId, 16)} (Hegotá ✓)</span>
+                        ) : (
+                          <span className="text-amber-700">{parseInt(chainId, 16)} (Switch to Hegotá ⚠️)</span>
+                        )
+                      ) : (
+                        "Detecting..."
+                      )}
                     </div>
                   </div>
                   <div className="p-2.5 bg-[#F2F2F2] border border-[#E2E6E6]">
@@ -183,16 +191,16 @@ export default function Navbar() {
                 <div className="flex gap-2">
                   <button
                     onClick={copyAddress}
-                    className="flex-1 py-2 bg-white border border-[#1A1A1A] text-xs font-mono font-bold hover:bg-[#F2F2F2] flex items-center justify-center gap-1.5 transition-colors"
+                    className="flex-1 py-2 bg-white border border-[#1A1A1A] text-xs font-mono font-bold hover:bg-[#F2F2F2] flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                   >
                     {isCopied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : null}
                     <span>{isCopied ? "COPIED" : "COPY ADDRESS"}</span>
                   </button>
                   <button
                     onClick={switchToDevnet}
-                    className="flex-1 py-2 bg-[#1A1A1A] text-white text-xs font-mono font-bold hover:bg-black flex items-center justify-center gap-1.5 transition-colors"
+                    className="flex-1 py-2 bg-[#D82C2C] text-white text-xs font-mono font-bold hover:bg-black flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                   >
-                    <span>SWITCH NETWORK</span>
+                    <span>SWITCH TO HEGOTÁ</span>
                   </button>
                 </div>
 

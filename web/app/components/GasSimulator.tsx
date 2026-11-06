@@ -11,6 +11,7 @@ import {
   RefreshCw,
   Cpu,
   AlertTriangle,
+  AlertCircle,
   CheckCircle2,
   XCircle,
 } from "lucide-react";
@@ -25,7 +26,15 @@ export default function GasSimulator() {
     isClaimingFaucet,
     faucetStatus,
     setIsWalletModalOpen,
+    chainId,
+    switchToDevnet,
   } = useWallet();
+
+  const isDevnet =
+    chainId === "0x301824" ||
+    chainId === "3151908" ||
+    chainId === "0x539" ||
+    chainId === "1337";
 
   const [chains, setChains] = useState(15);
   const [iterations, setIterations] = useState(20);
@@ -49,6 +58,10 @@ export default function GasSimulator() {
     const eth = w?.ethereum;
     if (!eth || !walletAddress) {
       setIsWalletModalOpen(true);
+      return;
+    }
+    if (!isDevnet) {
+      await switchToDevnet();
       return;
     }
     try {
@@ -120,6 +133,10 @@ export default function GasSimulator() {
     const eth = w?.ethereum;
     if (!eth || !walletAddress) {
       setIsWalletModalOpen(true);
+      return;
+    }
+    if (!isDevnet) {
+      await switchToDevnet();
       return;
     }
 
@@ -276,6 +293,22 @@ export default function GasSimulator() {
             Calibrated on Hegot&aacute; Devnet against actual execution of PQBenchmarkAccount.sol
           </div>
         </div>
+
+        {/* Network Mismatch Notice */}
+        {walletAddress && !isDevnet && (
+          <div className="p-3 bg-amber-50 border border-amber-300 text-amber-900 text-xs font-swiss-mono flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0" />
+              <span>Wallet connected to wrong network (Chain {chainId ? parseInt(chainId, 16) : "?"}). Switch to Hegot&aacute; to test.</span>
+            </div>
+            <button
+              onClick={switchToDevnet}
+              className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white font-bold text-[10px] tracking-wide flex-shrink-0 cursor-pointer"
+            >
+              SWITCH TO HEGOT&Aacute;
+            </button>
+          </div>
+        )}
 
         {/* Action Buttons */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">

@@ -5,12 +5,28 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 const STAKING_REGISTRY = "0xd51c04d7a0b01124e84de152f4e56d9eecb22d2f";
 const RPC_URL = "https://rpc1.hegota.ethrex.xyz";
 
+export interface EIP6963ProviderInfo {
+  uuid: string;
+  name: string;
+  icon: string;
+  rdns: string;
+}
+
+export interface EIP6963ProviderDetail {
+  info: EIP6963ProviderInfo;
+  provider: any;
+}
+
 interface WalletContextType {
   walletAddress: string | null;
   isConnecting: boolean;
+  connectingWalletName: string | null;
   isWalletModalOpen: boolean;
   setIsWalletModalOpen: (open: boolean) => void;
-  connectWallet: () => Promise<void>;
+  connectWallet: () => void;
+  connectSpecificWallet: (type: "metamask" | "phantom" | "coinbase" | "rabby" | "injected") => Promise<void>;
+  connectWithProvider: (provider: any, label: string) => Promise<void>;
+  cancelConnecting: () => void;
   disconnectWallet: () => void;
   chainId: string | null;
   switchToDevnet: () => Promise<void>;
@@ -23,6 +39,12 @@ interface WalletContextType {
   setIsStaked: (staked: boolean | null) => void;
   isCheckingStake: boolean;
   checkOnChainStake: (addr?: string) => Promise<boolean>;
+  activeProvider: any;
+  discoveredWallets: EIP6963ProviderDetail[];
+  getPhantomProvider: () => any;
+  getMetaMaskProvider: () => any;
+  getCoinbaseProvider: () => any;
+  getRabbyProvider: () => any;
 }
 
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
@@ -38,6 +60,102 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [walletError, setWalletError] = useState<string | null>(null);
   const [isStaked, setIsStaked] = useState<boolean | null>(null);
   const [isCheckingStake, setIsCheckingStake] = useState<boolean>(false);
+  const [activeProvider, setActiveProvider] = useState<any>(null);
+  const [discoveredWallets, setDiscoveredWallets] = useState<EIP6963ProviderDetail[]>([]);
+  const [connectingWalletName, setConnectingWalletName] = useState<string | null>(null);
+
+  // Helpers to resolve specific wallet providers (Phantom, MetaMask, Coinbase, Rabby, Injected)
+  const getPhantomProvider = useCallback(() => {
+    if (typeof window === "undefined") return null;
+    const w = window as any;
+    if (w.phantom?.ethereum) return w.phantom.ethereum;
+    if (w.ethereum?.providers?.length) {
+      const p = w.ethereum.providers.find((prov: any) => prov.isPhantom);
+      if (p) return p;
+    }
+    if (w.ethereum?.isPhantom) return w.ethereum;
+    return null;
+  }, []);
+
+  const getMetaMaskProvider = useCallback(() => {
+    if (typeof window === "undefined") return null;
+    const w = window as any;
+    if (w.ethereum?.providers?.length) {
+      const mm = w.ethereum.providers.find(
+        (p: any) => p.isMetaMask && !p.isPhantom && !p.isCoinbaseWallet
+      );
+      if (mm) return mm;
+    }
+    if (w.ethereum?.isMetaMask && !w.ethereum?.isPhantom && !w.ethereum?.isCoinbaseWallet) {
+      return w.ethereum;
+    }
+    return null;
+  }, []);
+
+  const getCoinbaseProvider = useCallback(() => {
+    if (typeof window === "undefined") return null;
+    const w = window as any;
+    if (w.coinbaseWalletExtension) return w.coinbaseWalletExtension;
+    if (w.ethereum?.providers?.length) {
+      const cb = w.ethereum.providers.find((p: any) => p.isCoinbaseWallet);
+      if (cb) return cb;
+    }
+    if (w.ethereum?.isCoinbaseWallet) return w.ethereum;
+    return null;
+  }, []);
+
+  const getRabbyProvider = useCallback(() => {
+    if (typeof window === "undefined") return null;
+    const w = window as any;
+    if (w.rabby) return w.rabby;
+    if (w.ethereum?.providers?.length) {
+      const r = w.ethereum.providers.find((p: any) => p.isRabby);
+      if (r) return r;
+    }
+    if (w.ethereum?.isRabby) return w.ethereum;
+    return null;
+  }, []);
+
+  const getAnyEthereumProvider = useCallback(() => {
+    if (typeof window === "undefined") return null;
+    const w = window as any;
+    return (
+      getPhantomProvider() ||
+      getMetaMaskProvider() ||
+      getCoinbaseProvider() ||
+      getRabbyProvider() ||
+      w.ethereum ||
+      null
+    );
+  }, [getPhantomProvider, getMetaMaskProvider, getCoinbaseProvider, getRabbyProvider]);
+
+  // Modern EIP-6963 Dynamic Wallet Discovery (Announce & Request Providers)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const handleAnnounce = (event: any) => {
+      if (!event.detail || !event.detail.info) return;
+      setDiscoveredWallets((prev) => {
+        if (
+          prev.some(
+            (w) =>
+              w.info.uuid === event.detail.info.uuid ||
+              w.info.name.toLowerCase() === event.detail.info.name.toLowerCase()
+          )
+        ) {
+          return prev;
+        }
+        return [...prev, event.detail];
+      });
+    };
+
+    window.addEventListener("eip6963:announceProvider", handleAnnounce);
+    window.dispatchEvent(new Event("eip6963:requestProvider"));
+
+    return () => {
+      window.removeEventListener("eip6963:announceProvider", handleAnnounce);
+    };
+  }, []);
 
   // Keep walletAddressRef synchronized
   useEffect(() => {
@@ -141,33 +259,71 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  // Connect wallet
-  const connectWallet = async () => {
+  // Connect with specific provider
+  const connectWithProvider = async (provider: any, label: string) => {
+    if (!provider) {
+      setWalletError(
+        `No ${label} extension detected in this browser. Please install ${label} or choose another option below.`
+      );
+      return;
+    }
+
     try {
       setIsConnecting(true);
+      setConnectingWalletName(label);
       setWalletError(null);
       if (typeof window !== "undefined") {
         localStorage.removeItem("qframe_wallet_disconnected");
       }
-      const w = typeof window !== "undefined" ? (window as any) : null;
-      if (!w || !w.ethereum) {
-        setWalletError("No Web3 wallet detected. Please install MetaMask, Rabby, or Coinbase Wallet.");
-        return;
-      }
-      const accounts = await w.ethereum.request({ method: "eth_requestAccounts" });
+
+      const accounts = await provider.request({ method: "eth_requestAccounts" });
       if (accounts && accounts.length > 0) {
         setWalletAddress(accounts[0]);
         walletAddressRef.current = accounts[0];
-        const currentChain = await w.ethereum.request({ method: "eth_chainId" });
+        setActiveProvider(provider);
+        const currentChain = await provider.request({ method: "eth_chainId" });
         setChainId(currentChain);
         setIsWalletModalOpen(false);
         await checkOnChainStake(accounts[0]);
       }
     } catch (err: any) {
-      setWalletError(err.message || "Failed to connect wallet");
+      setWalletError(err.message || `Failed to connect ${label}`);
     } finally {
       setIsConnecting(false);
+      setConnectingWalletName(null);
     }
+  };
+
+  const connectSpecificWallet = async (
+    type: "metamask" | "phantom" | "coinbase" | "rabby" | "injected"
+  ) => {
+    if (type === "metamask") {
+      const p = getMetaMaskProvider() || getAnyEthereumProvider();
+      await connectWithProvider(p, "MetaMask");
+    } else if (type === "phantom") {
+      const p = getPhantomProvider();
+      await connectWithProvider(p, "Phantom");
+    } else if (type === "coinbase") {
+      const p = getCoinbaseProvider() || getAnyEthereumProvider();
+      await connectWithProvider(p, "Coinbase Wallet");
+    } else if (type === "rabby") {
+      const p = getRabbyProvider();
+      await connectWithProvider(p, "Rabby Wallet");
+    } else {
+      const p = getAnyEthereumProvider();
+      await connectWithProvider(p, "Browser Wallet");
+    }
+  };
+
+  const cancelConnecting = () => {
+    setIsConnecting(false);
+    setConnectingWalletName(null);
+    setWalletError(null);
+  };
+
+  const connectWallet = () => {
+    setIsWalletModalOpen(true);
+    setWalletError(null);
   };
 
   const disconnectWallet = async () => {
@@ -177,15 +333,16 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       }
       setWalletAddress(null);
       walletAddressRef.current = null;
+      setActiveProvider(null);
       setIsStaked(null);
       setWalletError(null);
       setIsWalletModalOpen(false);
 
       // Attempt to revoke permissions on providers supporting EIP-2255 (MetaMask, etc.)
-      const w = typeof window !== "undefined" ? (window as any) : null;
-      if (w && w.ethereum && w.ethereum.request) {
+      const eth = activeProvider || getAnyEthereumProvider();
+      if (eth && eth.request) {
         try {
-          await w.ethereum.request({
+          await eth.request({
             method: "wallet_revokePermissions",
             params: [{ eth_accounts: {} }],
           });
@@ -199,17 +356,17 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   };
 
   const switchToDevnet = async () => {
-    const w = typeof window !== "undefined" ? (window as any) : null;
-    if (!w || !w.ethereum) return;
+    const eth = activeProvider || getAnyEthereumProvider();
+    if (!eth || !eth.request) return;
     try {
-      await w.ethereum.request({
+      await eth.request({
         method: "wallet_switchEthereumChain",
         params: [{ chainId: "0x301824" }], // 3151908 in hex
       });
       setChainId("0x301824");
     } catch (switchError: any) {
       try {
-        await w.ethereum.request({
+        await eth.request({
           method: "wallet_addEthereumChain",
           params: [
             {
@@ -318,9 +475,13 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       value={{
         walletAddress,
         isConnecting,
+        connectingWalletName,
         isWalletModalOpen,
         setIsWalletModalOpen,
         connectWallet,
+        connectSpecificWallet,
+        connectWithProvider,
+        cancelConnecting,
         disconnectWallet,
         chainId,
         switchToDevnet,
@@ -333,6 +494,12 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         setIsStaked,
         isCheckingStake,
         checkOnChainStake,
+        activeProvider,
+        discoveredWallets,
+        getPhantomProvider,
+        getMetaMaskProvider,
+        getCoinbaseProvider,
+        getRabbyProvider,
       }}
     >
       {children}

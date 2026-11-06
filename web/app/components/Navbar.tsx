@@ -4,22 +4,31 @@ import React, { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useWallet } from "../context/WalletContext";
-import { Wallet, Check, AlertCircle, X } from "lucide-react";
+import { Wallet, Check, AlertCircle, X, ArrowUpRight, RefreshCw } from "lucide-react";
 
 export default function Navbar() {
   const pathname = usePathname();
   const {
     walletAddress,
     isConnecting,
+    connectingWalletName,
     isWalletModalOpen,
     setIsWalletModalOpen,
     connectWallet,
+    connectSpecificWallet,
+    connectWithProvider,
+    cancelConnecting,
     disconnectWallet,
     chainId,
     switchToDevnet,
     walletError,
     isStaked,
     isCheckingStake,
+    discoveredWallets,
+    getPhantomProvider,
+    getMetaMaskProvider,
+    getCoinbaseProvider,
+    getRabbyProvider,
   } = useWallet();
 
   const [isCopied, setIsCopied] = useState(false);
@@ -212,18 +221,193 @@ export default function Navbar() {
                 </button>
               </div>
             ) : (
-              <div className="space-y-4">
+              <div className="space-y-3">
                 <p className="text-xs text-[#1A1A1A]/70 leading-relaxed font-sans">
-                  Connect your browser wallet to interact directly with the Hegot&aacute; Devnet, test post-quantum execution frames, and stake collateral.
+                  Select your preferred Web3 wallet to connect to the Hegot&aacute; Frame Devnet:
                 </p>
-                <button
-                  onClick={connectWallet}
-                  disabled={isConnecting}
-                  className="w-full py-3 bg-[#1A1A1A] hover:bg-[#D82C2C] text-white font-mono text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-colors cursor-pointer"
-                >
-                  <Wallet className="w-4 h-4" />
-                  <span>{isConnecting ? "Connecting..." : "Connect MetaMask / Injected"}</span>
-                </button>
+
+                {/* Connecting State */}
+                {isConnecting && connectingWalletName && (
+                  <div className="p-3 bg-amber-50 border border-amber-300 text-xs font-mono space-y-2">
+                    <div className="flex items-center gap-2 text-amber-900 font-bold">
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Requesting signature from {connectingWalletName}...</span>
+                    </div>
+                    <p className="text-[11px] text-amber-800 leading-tight">
+                      Please check your extension popup to approve the connection.
+                    </p>
+                    <button
+                      onClick={cancelConnecting}
+                      className="text-xs text-[#D82C2C] underline font-bold cursor-pointer hover:text-[#b02222]"
+                    >
+                      Cancel request
+                    </button>
+                  </div>
+                )}
+
+                {/* Multi-Wallet Choices */}
+                <div className="grid grid-cols-1 gap-2 max-h-[360px] overflow-y-auto pr-1">
+                  {/* 1. MetaMask */}
+                  <button
+                    onClick={() => connectSpecificWallet("metamask")}
+                    disabled={isConnecting}
+                    className="w-full p-3 border border-[#1A1A1A] hover:border-[#D82C2C] hover:bg-[#F2F2F2] flex items-center justify-between text-left transition-colors cursor-pointer disabled:opacity-50 group"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 bg-[#E2761B] flex items-center justify-center text-white font-bold text-xs flex-shrink-0 font-mono">
+                        MM
+                      </div>
+                      <div>
+                        <div className="font-bold text-xs font-mono text-[#1A1A1A] group-hover:text-[#D82C2C] flex items-center gap-2">
+                          <span>MetaMask</span>
+                          {typeof window !== "undefined" && getMetaMaskProvider() && (
+                            <span className="text-[9px] px-1 py-0.2 bg-emerald-100 text-emerald-800 font-bold border border-emerald-300">
+                              DETECTED
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[10px] text-[#A9B2B1]">Browser Extension / Mobile</div>
+                      </div>
+                    </div>
+                    <ArrowUpRight className="w-4 h-4 text-[#A9B2B1] group-hover:text-[#D82C2C]" />
+                  </button>
+
+                  {/* 2. Phantom */}
+                  <button
+                    onClick={() => connectSpecificWallet("phantom")}
+                    disabled={isConnecting}
+                    className="w-full p-3 border border-[#1A1A1A] hover:border-[#D82C2C] hover:bg-[#F2F2F2] flex items-center justify-between text-left transition-colors cursor-pointer disabled:opacity-50 group"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 bg-[#AB9FF2] flex items-center justify-center text-[#1A1A1A] font-bold text-xs flex-shrink-0 font-mono">
+                        PH
+                      </div>
+                      <div>
+                        <div className="font-bold text-xs font-mono text-[#1A1A1A] group-hover:text-[#D82C2C] flex items-center gap-2">
+                          <span>Phantom</span>
+                          {typeof window !== "undefined" && getPhantomProvider() && (
+                            <span className="text-[9px] px-1 py-0.2 bg-emerald-100 text-emerald-800 font-bold border border-emerald-300">
+                              DETECTED
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[10px] text-[#A9B2B1]">Solana &amp; Ethereum EVM Extension</div>
+                      </div>
+                    </div>
+                    <ArrowUpRight className="w-4 h-4 text-[#A9B2B1] group-hover:text-[#D82C2C]" />
+                  </button>
+
+                  {/* 3. Coinbase Wallet */}
+                  <button
+                    onClick={() => connectSpecificWallet("coinbase")}
+                    disabled={isConnecting}
+                    className="w-full p-3 border border-[#1A1A1A] hover:border-[#D82C2C] hover:bg-[#F2F2F2] flex items-center justify-between text-left transition-colors cursor-pointer disabled:opacity-50 group"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 bg-[#0052FF] flex items-center justify-center text-white font-bold text-xs flex-shrink-0 font-mono">
+                        CB
+                      </div>
+                      <div>
+                        <div className="font-bold text-xs font-mono text-[#1A1A1A] group-hover:text-[#D82C2C] flex items-center gap-2">
+                          <span>Coinbase Wallet</span>
+                          {typeof window !== "undefined" && getCoinbaseProvider() && (
+                            <span className="text-[9px] px-1 py-0.2 bg-emerald-100 text-emerald-800 font-bold border border-emerald-300">
+                              DETECTED
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[10px] text-[#A9B2B1]">Browser Extension / Smart Wallet</div>
+                      </div>
+                    </div>
+                    <ArrowUpRight className="w-4 h-4 text-[#A9B2B1] group-hover:text-[#D82C2C]" />
+                  </button>
+
+                  {/* 4. Rabby Wallet */}
+                  <button
+                    onClick={() => connectSpecificWallet("rabby")}
+                    disabled={isConnecting}
+                    className="w-full p-3 border border-[#1A1A1A] hover:border-[#D82C2C] hover:bg-[#F2F2F2] flex items-center justify-between text-left transition-colors cursor-pointer disabled:opacity-50 group"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 bg-[#8697FF] flex items-center justify-center text-white font-bold text-xs flex-shrink-0 font-mono">
+                        RB
+                      </div>
+                      <div>
+                        <div className="font-bold text-xs font-mono text-[#1A1A1A] group-hover:text-[#D82C2C] flex items-center gap-2">
+                          <span>Rabby Wallet</span>
+                          {typeof window !== "undefined" && getRabbyProvider() && (
+                            <span className="text-[9px] px-1 py-0.2 bg-emerald-100 text-emerald-800 font-bold border border-emerald-300">
+                              DETECTED
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[10px] text-[#A9B2B1]">DeFi Specialist Web3 Wallet</div>
+                      </div>
+                    </div>
+                    <ArrowUpRight className="w-4 h-4 text-[#A9B2B1] group-hover:text-[#D82C2C]" />
+                  </button>
+
+                  {/* 5. Dynamically Discovered EIP-6963 Wallets (Rainbow, Zerion, Trust, OKX, etc.) */}
+                  {discoveredWallets
+                    .filter(
+                      (w) =>
+                        !["metamask", "phantom", "coinbase", "rabby"].some((n) =>
+                          w.info.name.toLowerCase().includes(n)
+                        )
+                    )
+                    .map((wallet) => (
+                      <button
+                        key={wallet.info.uuid}
+                        onClick={() => connectWithProvider(wallet.provider, wallet.info.name)}
+                        disabled={isConnecting}
+                        className="w-full p-3 border border-[#1A1A1A] hover:border-[#D82C2C] hover:bg-[#F2F2F2] flex items-center justify-between text-left transition-colors cursor-pointer disabled:opacity-50 group"
+                      >
+                        <div className="flex items-center gap-3">
+                          {wallet.info.icon ? (
+                            <img
+                              src={wallet.info.icon}
+                              alt={wallet.info.name}
+                              className="w-8 h-8 object-contain flex-shrink-0"
+                            />
+                          ) : (
+                            <div className="w-8 h-8 bg-[#1A1A1A] text-white flex items-center justify-center font-bold text-xs flex-shrink-0 font-mono">
+                              W3
+                            </div>
+                          )}
+                          <div>
+                            <div className="font-bold text-xs font-mono text-[#1A1A1A] group-hover:text-[#D82C2C] flex items-center gap-2">
+                              <span>{wallet.info.name}</span>
+                              <span className="text-[9px] px-1 py-0.2 bg-emerald-100 text-emerald-800 font-bold border border-emerald-300">
+                                DETECTED
+                              </span>
+                            </div>
+                            <div className="text-[10px] text-[#A9B2B1]">EIP-6963 Discovered Provider</div>
+                          </div>
+                        </div>
+                        <ArrowUpRight className="w-4 h-4 text-[#A9B2B1] group-hover:text-[#D82C2C]" />
+                      </button>
+                    ))}
+
+                  {/* 6. Default Injected Provider */}
+                  <button
+                    onClick={() => connectSpecificWallet("injected")}
+                    disabled={isConnecting}
+                    className="w-full p-3 border border-[#1A1A1A] hover:border-[#D82C2C] hover:bg-[#F2F2F2] flex items-center justify-between text-left transition-colors cursor-pointer disabled:opacity-50 group"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 bg-[#1A1A1A] flex items-center justify-center text-white font-bold text-xs flex-shrink-0">
+                        <Wallet className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <div className="font-bold text-xs font-mono text-[#1A1A1A] group-hover:text-[#D82C2C]">
+                          Browser Injected Wallet
+                        </div>
+                        <div className="text-[10px] text-[#A9B2B1]">Default window.ethereum Provider</div>
+                      </div>
+                    </div>
+                    <ArrowUpRight className="w-4 h-4 text-[#A9B2B1] group-hover:text-[#D82C2C]" />
+                  </button>
+                </div>
               </div>
             )}
           </div>

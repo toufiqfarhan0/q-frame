@@ -4,7 +4,7 @@ import React, { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useWallet } from "../context/WalletContext";
-import { Wallet, Check, AlertCircle, X, ExternalLink, RefreshCw, Cpu, Layers } from "lucide-react";
+import { Wallet, Check, AlertCircle, X } from "lucide-react";
 
 export default function Navbar() {
   const pathname = usePathname();
@@ -47,58 +47,36 @@ export default function Navbar() {
             </Link>
           </div>
 
-          {/* Navigation Links */}
-          <nav className="hidden lg:flex items-center gap-5 xl:gap-7 text-xs xl:text-sm font-medium flex-shrink-0 whitespace-nowrap">
-            <Link
-              href="/#architecture"
-              className="text-[#1A1A1A] hover:text-[#D82C2C] transition-colors cursor-pointer whitespace-nowrap flex-shrink-0"
-            >
-              Architecture
-            </Link>
-            <Link
-              href="/#evidence"
-              className="text-[#1A1A1A] hover:text-[#D82C2C] transition-colors cursor-pointer whitespace-nowrap flex-shrink-0"
-            >
-              On‑Chain Proof
-            </Link>
-            <Link
-              href="/simulator"
-              className={`transition-colors cursor-pointer whitespace-nowrap flex-shrink-0 flex items-center gap-1.5 font-bold ${
-                pathname === "/simulator"
-                  ? "text-[#D82C2C] border-b-2 border-[#D82C2C] pb-0.5"
-                  : "text-[#1A1A1A] hover:text-[#D82C2C]"
-              }`}
-            >
-              <Cpu className="w-3.5 h-3.5 text-[#D82C2C]" />
-              <span>Gas Simulator</span>
-            </Link>
-            <Link
-              href="/studio"
-              className={`transition-colors cursor-pointer whitespace-nowrap flex-shrink-0 flex items-center gap-1.5 font-bold ${
-                pathname === "/studio"
-                  ? "text-[#D82C2C] border-b-2 border-[#D82C2C] pb-0.5"
-                  : "text-[#D82C2C] hover:text-black"
-              }`}
-            >
-              <span className="w-1.5 h-1.5 bg-[#D82C2C] rounded-full inline-block animate-pulse" />
-              <span>SDK Studio</span>
-            </Link>
-            <Link
-              href="/#benchmarks"
-              className="text-[#1A1A1A] hover:text-[#D82C2C] transition-colors cursor-pointer whitespace-nowrap flex-shrink-0"
-            >
-              Benchmarks
-            </Link>
-            <Link
-              href="/#pricing"
-              className="text-[#1A1A1A] hover:text-[#D82C2C] transition-colors cursor-pointer whitespace-nowrap flex-shrink-0"
-            >
-              Mempool Tiers
-            </Link>
-          </nav>
+          {/* Right Section: Nav Links + Wallet Actions */}
+          <div className="flex items-center gap-4 sm:gap-6 flex-shrink-0 whitespace-nowrap">
+            {/* Navigation Links */}
+            <nav className="flex items-center gap-4 sm:gap-6 text-xs xl:text-sm font-medium flex-shrink-0 whitespace-nowrap">
+              <Link
+                href="/simulator"
+                className={`transition-colors cursor-pointer whitespace-nowrap flex-shrink-0 font-bold ${
+                  pathname === "/simulator"
+                    ? "text-[#D82C2C] border-b-2 border-[#D82C2C] pb-0.5"
+                    : "text-[#1A1A1A] hover:text-[#D82C2C]"
+                }`}
+              >
+                Gas Simulator
+              </Link>
+              <Link
+                href="/studio"
+                className={`transition-colors cursor-pointer whitespace-nowrap flex-shrink-0 font-bold ${
+                  pathname === "/studio"
+                    ? "text-[#D82C2C] border-b-2 border-[#D82C2C] pb-0.5"
+                    : "text-[#D82C2C] hover:text-black"
+                }`}
+              >
+                SDK Studio
+              </Link>
+            </nav>
 
-          {/* Wallet Actions */}
-          <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0 whitespace-nowrap">
+            <div className="h-4 w-px bg-[#1A1A1A]/20 hidden sm:block" />
+
+            {/* Wallet Actions */}
+            <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0 whitespace-nowrap">
             {walletAddress ? (
               <div className="flex items-center gap-2">
                 {!isDevnet && (
@@ -147,7 +125,8 @@ export default function Navbar() {
             </Link>
           </div>
         </div>
-      </header>
+      </div>
+    </header>
 
       {/* Wallet Modal */}
       {isWalletModalOpen && (

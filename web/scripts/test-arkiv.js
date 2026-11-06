@@ -46,7 +46,7 @@ async function main() {
   // 3. Schema and Indexed Query Check
   console.log(`✓ 3. Executing indexed query on schema [${LeafReservation.name}]...`);
   console.log(`     Filter: WHERE wallet == ${TEST_WALLET}`);
-  
+
   const queryStart = Date.now();
   const result = await client
     .select()

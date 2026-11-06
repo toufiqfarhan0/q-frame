@@ -18,11 +18,18 @@ export async function POST(req: Request) {
     const { action, chains = 15, iterations = 20, isStaked = false } = body;
     const calculatedGas = Math.round(37247 + chains * iterations * 740);
 
-    // ACTION 1: Stake 0.012 ETH on-chain
+    // ACTION 1: Stake 0.012 ETH on-chain via NaiveStakingRegistry.addStake(86400)
     if (action === "stake") {
+      const stakeAbi = parseAbi(["function addStake(uint32 unstakeDelaySec) external payable"]);
+      const stakeCalldata = encodeFunctionData({
+        abi: stakeAbi,
+        functionName: "addStake",
+        args: [86400],
+      });
       const hash = await walletClient.sendTransaction({
         to: STAKING_REGISTRY as `0x${string}`,
         value: parseEther("0.012"),
+        data: stakeCalldata,
       });
       const receipt = await publicClient.waitForTransactionReceipt({ hash });
       return NextResponse.json({
@@ -118,3 +125,4 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: error.message || "Execution error" }, { status: 500 });
   }
 }
+

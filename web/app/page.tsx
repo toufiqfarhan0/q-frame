@@ -423,10 +423,14 @@ export default function Home() {
     setWalletError(null);
     setTxSuccessHash(null);
 
-    // If active browser wallet is connected and not in demo mode, try sending through browser wallet:
     const eth = activeProvider || getAnyEthereumProvider();
-    if (eth && !isDemoAccount && walletAddress) {
+    const balanceNum = parseFloat(walletBalance || "0");
+
+    // If active browser wallet is connected, has >= 0.012 ETH, and is not demo account:
+    if (eth && !isDemoAccount && walletAddress && balanceNum >= 0.012) {
       try {
+        // addStake(86400) calldata on NaiveStakingRegistry
+        const addStakeCalldata = "0x0396cb600000000000000000000000000000000000000000000000000000000000015180";
         const txHash = await eth.request({
           method: "eth_sendTransaction",
           params: [
@@ -434,6 +438,7 @@ export default function Home() {
               from: walletAddress,
               to: "0xd51c04d7a0b01124e84de152f4e56d9eecb22d2f", // NaiveStakingRegistry
               value: "0x2aa1efb94e000", // 0.012 ETH
+              data: addStakeCalldata,
             },
           ],
         });
@@ -443,11 +448,11 @@ export default function Home() {
         setIsStakingTx(false);
         return;
       } catch (err: any) {
-        console.warn("User wallet sendTransaction rejected or failed, executing via devnet gateway:", err);
+        console.warn("User wallet sendTransaction rejected or failed, executing via devnet relayer:", err);
       }
     }
 
-    // Broadcast real on-chain transaction from funded devnet participant account
+    // Broadcast real on-chain transaction from funded devnet participant account (1.0 ETH pool)
     try {
       const res = await fetch("/api/transact", {
         method: "POST",

@@ -1,6 +1,9 @@
-import { concat, keccak256, numberToHex, pad, toBytes, type Address, type Hex } from "viem";
+import { concat, keccak256, numberToHex, pad, toBytes } from "viem";
 
-export const NONCE_MANAGER_ADDRESS = "0x0000000000000000000000000000000000008250" as const;
+export type Address = `0x${string}`;
+export type Hex = `0x${string}`;
+
+export const NONCE_MANAGER_ADDRESS: Address = "0x0000000000000000000000000000000000008250";
 export const DEFAULT_DOMAIN_NAMESPACE = "Q_FRAME_WOTS_LEAF_V1";
 
 export type LeafState = "UNUSED" | "RESERVED" | "MINED" | "BURNED";

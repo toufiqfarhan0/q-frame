@@ -974,10 +974,9 @@ export default function Home() {
               </h1>
 
               <p className="text-base sm:text-lg text-[#1A1A1A]/85 max-w-xl leading-relaxed">
-                Standard Ethereum nodes reject post-quantum cryptography because NIST FIPS 205 (SPHINCS+) 
-                verification demands over <strong>200,000 gas</strong>, hitting the hard 100k mempool validation wall. 
-                <strong> Q-Frame</strong> leverages <strong>EIP-8141</strong> frame transactions and <strong>ERC-8421</strong> staked alternative 
-                mempools to elevate validation capacity to <strong>2,000,000 gas</strong>.
+                Standard-size post-quantum signature schemes (NIST FIPS 204/205) demand over <strong>200,000 to 1,500,000 gas</strong>, 
+                exceeding the canonical 100k mempool validation wall. <strong>Q-Frame</strong> empirically benchmarks 
+                <strong> EIP-8141</strong> execution frames and <strong>ERC-8421</strong> alternative mempools to safely accommodate high-budget verification up to <strong>2,000,000 gas</strong>.
               </p>
 
               <div className="flex flex-wrap items-center gap-4 pt-2">
@@ -1386,10 +1385,9 @@ export default function Home() {
                 Keyed Nonces for Post-Quantum One-Time Signatures (EIP-8250)
               </h2>
               <p className="text-base text-[#1A1A1A]/75 max-w-3xl mt-2 leading-relaxed">
-                Hash-based post-quantum schemes (WOTS+, SPHINCS+) use <strong>One-Time Signature (OTS)</strong> keys. 
-                In a standard mempool, fee-bumping (Replace-By-Fee) breaks security because re-signing reveals 
-                multiple signatures under the same OTS leaf. Q-Frame resolves this by mapping OTS leaves directly to 
-                <strong> EIP-8250 2D Nonce Keys</strong>.
+                Hash-based post-quantum schemes (WOTS+, SPHINCS+) use <strong>One-Time Signature (OTS)</strong> keys that must never sign twice. 
+                Q-Frame maps each OTS leaf index directly to an <strong>EIP-8250 2D Nonce Key</strong> (<code>nonceKey = leafIndex</code>) to enable 
+                parallel mempool channels and protocol-enforced leaf retirement upon block inclusion.
               </p>
             </div>
 
@@ -1398,25 +1396,25 @@ export default function Home() {
               <div className="p-6 bg-red-50/60 border-2 border-red-200 flex flex-col justify-between">
                 <div>
                   <div className="flex items-center justify-between pb-3 border-b border-red-200">
-                    <span className="text-red-900 font-bold uppercase">The Linear Nonce Failure Mode</span>
-                    <span className="bg-[#D82C2C] text-white text-[10px] px-1.5 py-0.5 font-bold uppercase">Catastrophic</span>
+                    <span className="text-red-900 font-bold uppercase">The One-Time Signature Constraint</span>
+                    <span className="bg-[#D82C2C] text-white text-[10px] px-1.5 py-0.5 font-bold uppercase">Linear Nonce Risk</span>
                   </div>
                   <div className="mt-4 space-y-3 text-[#1A1A1A]">
                     <div className="p-3 bg-white border border-red-200 font-mono text-[11px]">
                       [Tx 1: Nonce 42] &rarr; Signed with Leaf #7 (Pending in Mempool)
                     </div>
-                    <div className="text-center text-red-600 font-bold text-xs">&darr; Gas spikes; sender attempts Replace-By-Fee (RBF) &darr;</div>
+                    <div className="text-center text-red-600 font-bold text-xs">&darr; Queue serialization under linear 1D nonces &darr;</div>
                     <div className="p-3 bg-white border border-red-300 font-mono text-[11px] text-[#D82C2C]">
-                      [Tx 2: Nonce 42] &rarr; Re-signed with Leaf #7 at higher maxFeePerGas
+                      [Tx 2: Nonce 42] &rarr; If re-signed with Leaf #7 at higher maxFeePerGas
                     </div>
                     <p className="text-red-950 text-xs leading-relaxed pt-2">
-                      <strong>Security Annihilated:</strong> Two distinct signatures now exist for the same WOTS+ leaf. 
-                      An adversary computes chain intersections and forges arbitrary transactions.
+                      <strong>Signature Forgery Risk:</strong> Revealing two distinct signatures under the same OTS leaf allows 
+                      adversaries to compute chain intersections and forge valid signatures for other messages.
                     </p>
                   </div>
                 </div>
                 <div className="mt-4 pt-3 border-t border-red-200 text-[11px] text-red-700">
-                  Standard EVM lacks channel separation for stateful cryptographic keys.
+                  Standard linear nonces serialize all transactions into a single queue without key channel separation.
                 </div>
               </div>
 
@@ -1424,8 +1422,8 @@ export default function Home() {
               <div className="p-6 bg-[#1A1A1A] text-white swiss-border flex flex-col justify-between">
                 <div>
                   <div className="flex items-center justify-between pb-3 border-b border-white/20">
-                    <span className="text-[#D82C2C] font-bold uppercase">The Q-Frame EIP-8250 Architecture</span>
-                    <span className="bg-emerald-500 text-[#1A1A1A] text-[10px] px-1.5 py-0.5 font-bold uppercase">Live on Devnet</span>
+                    <span className="text-[#D82C2C] font-bold uppercase">The EIP-8250 Keyed Nonce Architecture</span>
+                    <span className="bg-emerald-500 text-[#1A1A1A] text-[10px] px-1.5 py-0.5 font-bold uppercase">Parallel Channels</span>
                   </div>
                   <div className="mt-4 space-y-3">
                     <div className="p-3 bg-white/10 border border-white/20 font-mono text-[11px]">
@@ -1436,8 +1434,8 @@ export default function Home() {
                       Channel (Key #8, Seq 0) &rarr; Concurrently pending in mempool without queue blocking
                     </div>
                     <p className="text-[#A9B2B1] text-xs leading-relaxed pt-2">
-                      <strong>Protocol-Enforced Invariant:</strong> The devnet&apos;s <code className="text-white">NONCE_MANAGER</code> predeploy (<code className="text-white">0x...8250</code>) 
-                      tracks channel retirement on-chain. Replay on an exhausted leaf is rejected at the mempool validation boundary before bytecode execution.
+                      <strong>Protocol Nullifier:</strong> Hegot&aacute;&apos;s predeploy <code className="text-white">NONCE_MANAGER</code> (<code className="text-white">0x...8250</code>) 
+                      permanently retires the leaf upon inclusion. (Note: In-place fee-bumping for one-time keys remains an active open research challenge).
                     </p>
                   </div>
                 </div>

@@ -4,7 +4,7 @@
 
 An implementation of post-quantum signature verification within native execution frames ([EIP-8141](https://eips.ethereum.org/EIPS/eip-8141), Transaction Type `0x06`) evaluated under alternative mempool admission rules ([ERC-8421](https://ethereum-magicians.org/t/erc-8421-frame-transaction-alternative-mempools/29800) / [forshtat/ERCs PR #6](https://github.com/forshtat/ERCs/pull/6)) and two-dimensional keyed nonces ([EIP-8250](https://eips.ethereum.org/EIPS/eip-8250)).
 
-The current implementation deploys `PQBenchmarkAccount` on the Hegotá Ethrex Devnet, implementing native EIP-8141 frame verification hooks (`HegotaSupport`) and calibrating verification gas envelopes against NIST FIPS 205 (SLH-DSA / SPHINCS+) parameter profiles. Verification gas sweeps demonstrate the 100,000 gas boundary enforced by standard mempools and the 1,000,000 gas extended ceiling unlocked via staked collateral in `NaiveStakingRegistry`. To resolve the critical key-exhaustion vulnerability where Replace-By-Fee (RBF) fee-bumping forces one-time signature (OTS) leaf reuse, Q-Frame formalizes a two-dimensional nonce binding $\text{nonceKey} = \text{leafIndex}$ using the native EIP-8250 `NONCE_MANAGER` predeploy (`0x...8250`). All contracts, internal Yul accelerator libraries, deployment receipts (7.26M devnet gas), and execution calls (Block `#1,318,311`) are verified on-chain. See [checkpoint 1A](./reviews/CHECKPOINT_1A.md) for empirical gas curves, [checkpoint 1B](./reviews/CHECKPOINT_1B.md) for the 3-state admission protocol, [checkpoint 1C](./reviews/CHECKPOINT_1C.md) for the keyed-nonce OTS formalization, [devnet feedback](./FEEDBACK.md) for EF Access Layer findings, and [deployment record](./deployment.md) for the complete address inventory.
+The current implementation deploys `PQBenchmarkAccount` on the Hegotá Ethrex Devnet, implementing native EIP-8141 frame verification hooks (`HegotaSupport`) and calibrating verification gas envelopes against NIST FIPS 205 (SLH-DSA / SPHINCS+) parameter profiles. Verification gas sweeps demonstrate the 100,000 gas boundary enforced by standard mempools and the 2,000,000 gas extended ceiling unlocked via staked collateral in `NaiveStakingRegistry`. To explore key-state management for One-Time Signatures (OTS), Q-Frame investigates a two-dimensional nonce binding $\text{nonceKey} = \text{leafIndex}$ using the native EIP-8250 `NONCE_MANAGER` predeploy (`0x...8250`) to enable parallel leaf channels and protocol-enforced leaf retirement upon mining (while documenting the remaining open challenge of safe fee-bumping for one-time keys). All contracts, internal Yul accelerator libraries, deployment receipts (7.26M devnet gas), and execution calls (Block `#1,318,311`) are verified on-chain. See [checkpoint 1A](./reviews/CHECKPOINT_1A.md) for empirical gas curves, [checkpoint 1B](./reviews/CHECKPOINT_1B.md) for the 3-state admission protocol, [checkpoint 1C](./reviews/CHECKPOINT_1C.md) for the keyed-nonce OTS formalization, [devnet feedback](./FEEDBACK.md) for EF Access Layer findings, and [deployment record](./deployment.md) for the complete address inventory.
 
 Target bounty track: **Ethereum Foundation — Best use of the Frame Transaction Alternative Mempool** ($5,000 bounty).
 
@@ -41,42 +41,47 @@ See [`FEEDBACK.md`](./FEEDBACK.md) for devnet developer experience notes, client
 
 ## Mechanism and Verification Scope
 
-Post-quantum signature schemes cannot run within Ethereum's standard mempool:
-* **The Computational Burden:** State-of-the-art hash-based schemes (NIST FIPS 205 / SLH-DSA / SPHINCS+) require between **200,000 and 300,000 gas** to verify on-chain (Nethermind benchmarks indicate ~276,000 gas for baseline parameter sets).
+Standard-size post-quantum signature schemes challenge Ethereum's standard mempool validation budget:
+* **The Computational Envelope:** While highly compressed or tuned schemes (such as WOTS+C at ~73k gas and FORS+C at ~35k gas) can fit under 100,000 gas, standard-size NIST FIPS 204/205 parameter sets (SLH-DSA / SPHINCS+ and lattice-based ML-DSA / Dilithium) demand between **250,000 and over 1,500,000 gas** in EVM verification without dedicated precompiles (Nethermind benchmarks indicate ~276,000 gas for baseline SPHINCS+).
 * **The Canonical Mempool Bound:** Canonical EIP-8141 mempools strictly cap frame verification gas at **100,000 gas** (`MAX_VERIFY_GAS`) to prevent P2P gossip Denial-of-Service (DoS) attacks.
-* **The ERC-8421 Solution:** By locking collateral in an on-chain staking registry (`NaiveStakingRegistry`), senders unlock an extended verification ceiling of **2,000,000 gas** (`MAX_VERIFY_GAS_PER_ENTITY`, recently expanded from 1,000,000 gas by the EF Access Layer team) in the alternative mempool sidecar.
+* **The ERC-8421 Solution:** By locking collateral in an on-chain staking registry (`NaiveStakingRegistry`), senders unlock an extended verification ceiling of **2,000,000 gas** (`MAX_VERIFY_GAS_PER_ENTITY`, recently expanded from 1,000,000 gas by the EF Access Layer team) in the alternative mempool sidecar. This acts as the necessary safety valve for heavy cryptographic verification.
 
 ---
 
 ## Architecture: Keyed Nonces for One-Time Signatures (EIP-8250)
 
-### The Collision Problem: Fee-Bumping Destroys Hash-Based Signatures
-Hash-based signature schemes (WOTS+, SPHINCS+, XMSS) rely on **One-Time Signature (OTS)** leaves. Each leaf private key can only sign a single message digest. In standard Ethereum:
-1. When a transaction is pending in the mempool, fee-bumping (Replace-By-Fee, RBF) requires submitting a new transaction with higher `maxFeePerGas`.
-2. Re-signing a new transaction payload under the same OTS leaf exposes a second signature. **Revealing two signatures under one OTS key allows an adversary to compute preimages and forge arbitrary transactions**, catastrophically breaking the account's quantum security.
-3. Conversely, signing the replacement with a *new* OTS leaf under a standard linear 1D nonce produces conflicting sequences that standard nodes reject as duplicate nonces.
+### 1. The One-Time Signature Constraint
+Hash-based signature schemes (WOTS+, SPHINCS+, XMSS) rely on **One-Time Signature (OTS)** leaves. Each leaf private key can only sign a single message digest. In standard EVM with linear nonces:
+1. All pending transactions from an account share a single serialized queue.
+2. If an adversary observes two distinct signatures under the same OTS leaf, they can compute hash-chain intersections to forge valid signatures for other messages.
+3. Linear nonces provide no channel separation for stateful cryptographic keys.
 
-### The Q-Frame Architecture: Mapping OTS Leaf Indices to EIP-8250 Nonce Keys
+### 2. Parallel Channels and Protocol-Enforced Leaf Retirement
 The Hegotá devnet natively implements **[EIP-8250](https://eips.ethereum.org/EIPS/eip-8250) Keyed Nonces** via the `NONCE_MANAGER` predeploy (`0x0000000000000000000000000000000000008250`). Nonces are two-dimensional: `(nonceKey, sequence)`.
 
-Q-Frame establishes a formal mapping between post-quantum key state and the mempool's nonce engine:
+Q-Frame explores mapping post-quantum key state directly to the mempool's nonce engine:
 $$\text{nonceKey} := \text{leafIndex}$$
 
 ```
-Linear Nonce (Broken on RBF):
-[Nonce 42: Msg A (OTS Leaf #7)]  --->  RBF: [Nonce 42: Msg B (OTS Leaf #7)]  ==> FORGERY VULNERABILITY!
+Linear Nonce (Single Serialized Queue):
+[Nonce 42: Msg A (Leaf #7)] ---> Head-of-line blocking for subsequent keys
 
-EIP-8250 Keyed Nonce (Q-Frame):
-Channel (Key #7, Seq 0)  ---> One-Time Sign & Mine (Leaf #7 exhausted, Seq -> 1)
-Channel (Key #8, Seq 0)  ---> Concurrently pending in mempool without queue blockage!
+EIP-8250 Keyed Nonce (Parallel Channels):
+Channel (Key #7, Seq 0) ---> Signs Msg A & mines (Leaf #7 retired, Seq -> 1)
+Channel (Key #8, Seq 0) ---> Concurrently pending in mempool without queue blocking!
 ```
 
-**Architectural Invariants:**
-1. **Parallel Mempool Occupancy:** Transactions using distinct OTS leaves (`Key_A`, `Key_B`) sit pending in the mempool side-by-side without head-of-line blocking (demonstrated in `step_12_tx_keyed_nonces`).
-2. **In-Protocol Replay Immunity:** Because each leaf channel has its own sequence, re-signing under an exhausted leaf is rejected at the mempool validation frame before bytecode execution.
-3. **No Off-Chain State Bottleneck:** Key-state retirement is tracked by the on-chain `NONCE_MANAGER`, turning stateful PQ key management into an enforced protocol invariant.
+**Architectural Observations:**
+1. **Parallel Mempool Occupancy:** Transactions using distinct OTS leaves (`Key_A`, `Key_B`) sit pending in the mempool side-by-side on independent channels without head-of-line blocking (demonstrated in `step_12_tx_keyed_nonces`).
+2. **On-Chain Nullifier / Retirement:** Once a transaction is included in a block, the on-chain sequence for that key advances ($\text{Seq} \to 1$). Any replayed transaction attempting to reuse the exhausted leaf is rejected at the mempool validation frame before execution.
 
-See [checkpoint 1C](./reviews/CHECKPOINT_1C.md) for formal proofs and security analysis.
+### 3. Open Challenge: Fee-Bumping (Replace-By-Fee) with One-Time Keys
+It is important to emphasize that **safe fee-bumping with one-time keys remains an open research problem**:
+* Fee-bumping (RBF) requires replacing an existing pending transaction at the *same* nonce.
+* If the nonce key is the leaf index, submitting a replacement transaction with higher `maxFeePerGas` either:
+  1. Re-signs under the same leaf key (the exact vulnerability, revealing two signatures and allowing forgery), or
+  2. Signs under a new leaf key (which creates a separate, concurrent transaction on a new channel rather than replacing the pending one; if gas prices subsequently drop, both transactions could be included).
+* We document this trade-off as an architectural consideration for post-quantum wallet designers.
 
 ---
 

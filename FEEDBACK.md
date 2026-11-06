@@ -40,13 +40,14 @@ Feedback compiled during ETHGlobal Mumbai for the Ethereum Foundation Access Lay
 
 ---
 
-## 4. Architectural Contribution: EIP-8250 Keyed Nonces for Hash-Based Signatures
+## 4. Architectural Findings: EIP-8250 Keyed Nonces for Hash-Based Signatures
 
-During our implementation of `PQBenchmarkAccount`, we uncovered a fundamental interaction between Post-Quantum One-Time Signatures (OTS) and mempool transaction replacement:
+During our implementation of `PQBenchmarkAccount`, we analyzed the interaction between Post-Quantum One-Time Signatures (OTS) and mempool transaction management:
 
-* **The Problem:** Hash-based one-time signature schemes (WOTS+, SPHINCS+) become insecure if an OTS key signs more than once. When a transaction requires a fee-bump (Replace-By-Fee), re-signing with higher fees exposes a second signature under the same leaf, allowing an adversary to forge signatures.
-* **The Solution:** The Hegotá devnet natively provides **EIP-8250 Keyed Nonces** via `NONCE_MANAGER` (`0x...8250`).
-* **The Design:** By mapping each OTS leaf index directly to an EIP-8250 `nonceKey` ($\text{nonceKey} = \text{leafIndex}$), transactions on different leaves can sit concurrently in the mempool side-by-side without queue serialization bottlenecks (`step_12_tx_keyed_nonces`). Monotonic advancement on each channel prevents replay attacks at the mempool layer.
+* **The One-Time Signature Constraint:** Hash-based one-time signature schemes (WOTS+, SPHINCS+) become insecure if an OTS key signs more than once. If an attacker sees two distinct signatures under the same leaf, they can compute chain intersections and forge signatures.
+* **Parallel Channels via EIP-8250:** The Hegotá devnet natively provides **EIP-8250 Keyed Nonces** via `NONCE_MANAGER` (`0x...8250`). By mapping each OTS leaf index directly to an EIP-8250 `nonceKey` ($\text{nonceKey} = \text{leafIndex}$), transactions on different leaves can sit concurrently in the mempool side-by-side on independent channels without head-of-line blocking (`step_12_tx_keyed_nonces`).
+* **On-Chain Leaf Retirement:** Once a transaction is included in a block, the on-chain sequence advances, acting as a protocol-enforced nullifier that rejects any subsequent replay on that exhausted leaf.
+* **Open Challenge (Fee-Bumping with OTS Keys):** In-place Replace-By-Fee (RBF) for one-time keys remains an open research problem. Replacing a pending transaction at the same nonce either reuses the same leaf (compromising OTS security) or signs under a new leaf (creating a separate concurrent transaction rather than canceling the first). We highlight this trade-off for future account abstraction wallet designs.
 
 ---
 

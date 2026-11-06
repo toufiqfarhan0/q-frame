@@ -1,0 +1,14 @@
+{
+  "name": "q-frame",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Post-Quantum Frame Transaction Admission & Keyed-Nonce Architecture on EIP-8141 & ERC-8421 Alternative Mempools",
+  "scripts": {
+    "demo": "cd mempool-workshop && yarn demo",
+    "test": "cd mempool-workshop && yarn test",
+    "test:contracts": "cd mempool-workshop && forge test --root contracts",
+    "web": "cd web && npm run dev",
+    "build": "cd web && npm run build"
+  }
+}
+

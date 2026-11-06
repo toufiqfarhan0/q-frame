@@ -68,7 +68,11 @@ export default function Home() {
   const [isTestingCanonical, setIsTestingCanonical] = useState<boolean>(false);
   const [canonicalResult, setCanonicalResult] = useState<{ accepted: boolean; message: string; timestamp?: string } | null>(null);
 
-  // Alt-Mempool test state
+  // Unstaked Alt-Mempool test state (Door 2)
+  const [isTestingAltUnstaked, setIsTestingAltUnstaked] = useState<boolean>(false);
+  const [altUnstakedResult, setAltUnstakedResult] = useState<{ accepted: boolean; message: string; timestamp?: string } | null>(null);
+
+  // Alt-Mempool test state (Door 3)
   const [isTestingAltMempool, setIsTestingAltMempool] = useState<boolean>(false);
   const [altMempoolResult, setAltMempoolResult] = useState<{ accepted: boolean; txHash?: string; blockNumber?: number; gasUsed?: number; message: string; timestamp?: string } | null>(null);
 
@@ -170,9 +174,10 @@ export default function Home() {
     };
   }, []);
 
-  // Check if wallet is already connected on mount (respecting explicit user disconnect)
+  // Check if wallet was explicitly connected in this session (respecting explicit user disconnect)
   useEffect(() => {
-    if (typeof window !== "undefined" && localStorage.getItem("qframe_disconnected") === "true") {
+    if (typeof window === "undefined") return;
+    if (sessionStorage.getItem("qframe_user_connected") !== "true") {
       return;
     }
     const eth = getAnyEthereumProvider();
@@ -180,13 +185,12 @@ export default function Home() {
       eth
         .request({ method: "eth_accounts" })
         .then((accounts: string[]) => {
-          if (typeof window !== "undefined" && localStorage.getItem("qframe_disconnected") === "true") {
+          if (sessionStorage.getItem("qframe_user_connected") !== "true") {
             return;
           }
           if (accounts && accounts.length > 0) {
             setWalletAddress(accounts[0]);
             setActiveProvider(eth);
-            setIsDemoAccount(false);
             eth
               .request({ method: "eth_chainId" })
               .then((cid: string) => setChainId(cid))
@@ -235,6 +239,7 @@ export default function Home() {
 
       if (accounts && accounts.length > 0) {
         if (typeof window !== "undefined") {
+          sessionStorage.setItem("qframe_user_connected", "true");
           localStorage.removeItem("qframe_disconnected");
         }
         const address = accounts[0];
@@ -263,7 +268,7 @@ export default function Home() {
         // Attach listeners for live network and account changes
         if (provider.on) {
           provider.on("accountsChanged", (newAccs: string[]) => {
-            if (typeof window !== "undefined" && localStorage.getItem("qframe_disconnected") === "true") {
+            if (typeof window !== "undefined" && sessionStorage.getItem("qframe_user_connected") !== "true") {
               return;
             }
             if (!newAccs || newAccs.length === 0) {
@@ -290,13 +295,8 @@ export default function Home() {
   };
 
   const connectSpecificWallet = async (
-    type: "metamask" | "phantom" | "coinbase" | "rabby" | "injected" | "demo"
+    type: "metamask" | "phantom" | "coinbase" | "rabby" | "injected"
   ) => {
-    if (type === "demo") {
-      connectDemoAccount();
-      setIsWalletModalOpen(false);
-      return;
-    }
     if (type === "metamask") {
       const p = getMetaMaskProvider() || getAnyEthereumProvider();
       await connectWithProvider(p, "MetaMask");
@@ -326,21 +326,9 @@ export default function Home() {
     setWalletError(null);
   };
 
-  const connectDemoAccount = () => {
-    if (typeof window !== "undefined") {
-      localStorage.removeItem("qframe_disconnected");
-    }
-    setWalletAddress("0x08cfae005698Fae83cA442FfEFb69c58904cFf9c");
-    setWalletBalance("1.0000");
-    setChainId("0x301824");
-    setActiveProvider(null);
-    setIsDemoAccount(true);
-    setWalletError(null);
-    setIsWalletModalOpen(false);
-  };
-
   const disconnectWallet = async () => {
     if (typeof window !== "undefined") {
+      sessionStorage.removeItem("qframe_user_connected");
       localStorage.setItem("qframe_disconnected", "true");
     }
     const eth = activeProvider || getAnyEthereumProvider();
@@ -394,7 +382,7 @@ export default function Home() {
   const claimFaucet = async (targetAddr?: string) => {
     const addr = targetAddr || walletAddress;
     if (!addr) {
-      setWalletError("Connect wallet or click Demo Account first.");
+      setWalletError("Please connect your wallet first to receive faucet testnet funds.");
       return;
     }
     try {
@@ -409,10 +397,10 @@ export default function Home() {
       if (res.ok) {
         setFaucetStatus(`1.0 ETH sent! Tx: ${data.txhash || "Success"}`);
       } else {
-        setFaucetStatus(data.msg || "Faucet rate-limited (1 claim/hr/IP). Use pre-funded Demo Account.");
+        setFaucetStatus(data.msg || "Faucet rate-limited (1 claim/hr/IP). Please check explorer.");
       }
     } catch (e: any) {
-      setFaucetStatus("Faucet claim request sent. If rate-limited, use the pre-funded Demo Account.");
+      setFaucetStatus("Faucet claim request sent. If rate-limited, claim via faucet.hegota.ethrex.xyz.");
     } finally {
       setIsClaimingFaucet(false);
     }
@@ -426,8 +414,8 @@ export default function Home() {
     const eth = activeProvider || getAnyEthereumProvider();
     const balanceNum = parseFloat(walletBalance || "0");
 
-    // If active browser wallet is connected, has >= 0.012 ETH, and is not demo account:
-    if (eth && !isDemoAccount && walletAddress && balanceNum >= 0.012) {
+    // If active browser wallet is connected and has >= 0.012 ETH:
+    if (eth && walletAddress && balanceNum >= 0.012) {
       try {
         // addStake(86400) calldata on NaiveStakingRegistry
         const addStakeCalldata = "0x0396cb600000000000000000000000000000000000000000000000000000000000015180";
@@ -503,6 +491,37 @@ export default function Home() {
       });
     } finally {
       setIsTestingCanonical(false);
+    }
+  };
+
+  const handleTestAltUnstaked = async () => {
+    setIsTestingAltUnstaked(true);
+    setAltUnstakedResult(null);
+    try {
+      const res = await fetch("/api/transact", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "transact_pq",
+          chains,
+          iterations,
+          isStaked: false,
+        }),
+      });
+      const data = await res.json();
+      setAltUnstakedResult({
+        accepted: false,
+        message: data.reason || `UNSTAKED_REJECTED: Alt-mempool limits unstaked entities to 100,000 gas. Current verification requires ${calculatedGas.toLocaleString()} gas. Deposit 0.012 ETH stake to unlock the 2,000,000 gas allowance.`,
+        timestamp: new Date().toLocaleTimeString(),
+      });
+    } catch (err: any) {
+      setAltUnstakedResult({
+        accepted: false,
+        message: err.message || "Unstaked rejection simulation failed",
+        timestamp: new Date().toLocaleTimeString(),
+      });
+    } finally {
+      setIsTestingAltUnstaked(false);
     }
   };
 
@@ -687,12 +706,6 @@ export default function Home() {
                 className="bg-[#D82C2C] hover:bg-[#b02222] text-white px-3 py-1 font-bold text-xs uppercase transition-colors cursor-pointer"
               >
                 Switch to Hegotá (1-Click)
-              </button>
-              <button
-                onClick={connectDemoAccount}
-                className="bg-white/10 hover:bg-white/20 text-white px-3 py-1 text-xs uppercase transition-colors cursor-pointer border border-white/20"
-              >
-                Use Demo Account (1.0 ETH)
               </button>
             </div>
           </div>
@@ -918,39 +931,6 @@ export default function Home() {
                     </div>
                   </div>
                   <ArrowUpRight className="w-4 h-4 text-[#A9B2B1] group-hover:text-[#D82C2C]" />
-                </button>
-
-                {/* Divider */}
-                <div className="relative py-1 flex items-center">
-                  <div className="flex-grow border-t border-[#A9B2B1]/30"></div>
-                  <span className="flex-shrink mx-3 text-[10px] uppercase font-swiss-mono text-[#A9B2B1]">
-                    Or 1-Click Zero Setup
-                  </span>
-                  <div className="flex-grow border-t border-[#A9B2B1]/30"></div>
-                </div>
-
-                {/* 7. Instant Demo Account */}
-                <button
-                  onClick={() => connectSpecificWallet("demo")}
-                  className="w-full p-3 bg-[#F2F2F2] border-2 border-dashed border-[#D82C2C] hover:bg-red-50 flex items-center justify-between text-left transition-colors cursor-pointer group"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 bg-[#D82C2C] text-white flex items-center justify-center font-bold text-xs flex-shrink-0 font-swiss-mono">
-                      1.0
-                    </div>
-                    <div>
-                      <div className="font-bold text-xs font-swiss-mono text-[#1A1A1A] flex items-center gap-1.5">
-                        <span>Pre-Funded Demo Account</span>
-                        <span className="bg-[#D82C2C] text-white text-[9px] px-1 py-0.5 font-bold uppercase">
-                          Judges
-                        </span>
-                      </div>
-                      <div className="text-[10px] text-[#1A1A1A]/70">
-                        Zero extension needed · 1.0 ETH loaded on Hegotá Devnet
-                      </div>
-                    </div>
-                  </div>
-                  <ArrowUpRight className="w-4 h-4 text-[#D82C2C]" />
                 </button>
               </div>
             </div>
@@ -1234,18 +1214,18 @@ export default function Home() {
                 {/* Step 1 */}
                 <div className="space-y-3 bg-white/5 p-4 border border-white/10 flex flex-col justify-between">
                   <div className="space-y-2">
-                    <div className="text-[#D82C2C] font-bold text-sm">01 / FASTEST PATH (ZERO SETUP)</div>
+                    <div className="text-[#D82C2C] font-bold text-sm">01 / CONNECT DEVNET WALLET</div>
                     <p className="text-[#A9B2B1] leading-relaxed">
-                      Hackathon judges do not need to install extensions or configure custom RPCs. 
-                      Click <strong className="text-white">CONNECT WALLET</strong> and select <strong className="text-white">Pre-Funded Demo Account</strong> (or click below) to instantly load our 
-                      pre-funded live devnet account (<code className="text-[#D82C2C]">0x08cf...</code>).
+                      Connect your MetaMask, Coinbase Wallet, or Rabby. Our 1-click network switcher automatically configures the 
+                      Hegotá Frame Devnet (<code className="text-white">Chain 3151908</code>) with native EIP-8141 opcode support.
                     </p>
                   </div>
                   <button
-                    onClick={connectDemoAccount}
-                    className="w-full py-2 bg-[#D82C2C] hover:bg-[#b02222] text-white font-bold transition-colors cursor-pointer text-center mt-2"
+                    onClick={() => setIsWalletModalOpen(true)}
+                    className="w-full py-2 bg-[#D82C2C] hover:bg-[#b02222] text-white font-bold transition-colors cursor-pointer text-center mt-2 flex items-center justify-center gap-2"
                   >
-                    ACTIVATE DEMO ACCOUNT (1.0 ETH)
+                    <Wallet className="w-3.5 h-3.5" />
+                    <span>CONNECT WALLET</span>
                   </button>
                 </div>
 
@@ -1565,21 +1545,13 @@ export default function Home() {
                   </div>
                 </div>
 
-                {/* Status 1: Canonical Mempool */}
-                <div className="p-4 swiss-border space-y-1">
+                {/* Door 1: Canonical Mempool */}
+                <div className="p-4 swiss-border space-y-2">
                   <div className="flex items-center justify-between text-xs font-swiss-mono">
-                    <span className="text-[#A9B2B1]">CANONICAL ETHEREUM POOL (100k CAP)</span>
-                    {isCanonicalRejected ? (
-                      <span className="text-[#D82C2C] font-bold flex items-center gap-1">
-                        <XCircle className="w-3.5 h-3.5" /> REJECTED
-                      </span>
-                    ) : (
-                      <span className="text-emerald-600 font-bold flex items-center gap-1">
-                        <CheckCircle2 className="w-3.5 h-3.5" /> ADMITTED
-                      </span>
-                    )}
+                    <span className="font-bold text-[#1A1A1A]">DOOR 1: CANONICAL MEMPOOL</span>
+                    <span className="text-[10px] bg-red-100 text-[#D82C2C] px-1.5 py-0.5 font-bold">100k HARD CAP</span>
                   </div>
-                  <div className="w-full bg-[#F2F2F2] h-2 overflow-hidden mt-2">
+                  <div className="w-full bg-[#F2F2F2] h-1.5 overflow-hidden">
                     <div
                       className={`h-full ${isCanonicalRejected ? "bg-[#D82C2C]" : "bg-emerald-500"}`}
                       style={{
@@ -1587,7 +1559,7 @@ export default function Home() {
                       }}
                     />
                   </div>
-                  <div className="text-[11px] font-swiss-mono text-[#A9B2B1] pt-1">
+                  <div className="text-[11px] font-swiss-mono text-[#A9B2B1]">
                     {isCanonicalRejected
                       ? `Exceeds canonical DoS limit by ${(calculatedGas - canonicalCap).toLocaleString()} gas`
                       : `Within 100,000 gas limit`}
@@ -1596,25 +1568,25 @@ export default function Home() {
                   <button
                     onClick={handleTestCanonical}
                     disabled={isTestingCanonical}
-                    className="w-full mt-3 py-2 px-3 text-[11px] font-swiss-mono font-bold uppercase tracking-wider bg-white hover:bg-[#F9F9F9] text-[#1A1A1A] swiss-border flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+                    className="w-full py-2 px-3 text-[11px] font-swiss-mono font-bold uppercase tracking-wider bg-white hover:bg-[#F9F9F9] text-[#1A1A1A] swiss-border flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
                   >
                     {isTestingCanonical ? (
                       <>
                         <RefreshCw className="w-3 h-3 animate-spin text-[#D82C2C]" />
-                        <span>SIMULATING P2P GOSSIP ADMISSION...</span>
+                        <span>SIMULATING CANONICAL GOSSIP...</span>
                       </>
                     ) : (
                       <>
                         <Play className="w-3 h-3 text-[#D82C2C]" />
-                        <span>TRANSACT VIA CANONICAL POOL (TEST 100k CAP)</span>
+                        <span>1. TEST CANONICAL MEMPOOL (WATCH IT REJECT)</span>
                       </>
                     )}
                   </button>
 
                   {canonicalResult && (
-                    <div className={`mt-2 p-2.5 text-[11px] font-swiss-mono border ${canonicalResult.accepted ? "bg-emerald-50 text-emerald-800 border-emerald-300" : "bg-red-50 text-[#D82C2C] border-red-200"}`}>
+                    <div className={`p-2.5 text-[11px] font-swiss-mono border ${canonicalResult.accepted ? "bg-emerald-50 text-emerald-800 border-emerald-300" : "bg-red-50 text-[#D82C2C] border-red-200"}`}>
                       <div className="font-bold flex items-center justify-between pb-1">
-                        <span>{canonicalResult.accepted ? "ADMISSION STATUS: ACCEPTED" : "ADMISSION STATUS: REJECTED"}</span>
+                        <span>{canonicalResult.accepted ? "STATUS: ACCEPTED" : "STATUS: REJECTED"}</span>
                         <span className="text-[10px] text-[#A9B2B1]">{canonicalResult.timestamp}</span>
                       </div>
                       <div className="text-[10px] leading-relaxed">{canonicalResult.message}</div>
@@ -1622,63 +1594,140 @@ export default function Home() {
                   )}
                 </div>
 
-                {/* Status 2: Q-Frame Staked Alt Mempool */}
-                <div className="p-4 bg-[#1A1A1A] text-white space-y-1">
+                {/* Door 2: Unstaked Alt-Mempool */}
+                <div className="p-4 swiss-border space-y-2">
                   <div className="flex items-center justify-between text-xs font-swiss-mono">
-                    <span className="text-white/60">Q-FRAME STAKED POOL (2.0M CAP)</span>
-                    {isAltMempoolAdmitted ? (
-                      <span className="text-emerald-400 font-bold flex items-center gap-1">
-                        <CheckCircle2 className="w-3.5 h-3.5" /> ADMITTED & MINED
-                      </span>
-                    ) : (
-                      <span className="text-[#D82C2C] font-bold flex items-center gap-1">
-                        <XCircle className="w-3.5 h-3.5" /> EXCEEDED 2M CAP
-                      </span>
-                    )}
+                    <span className="font-bold text-[#1A1A1A]">DOOR 2: UNSTAKED ALT-MEMPOOL</span>
+                    <span className="text-[10px] bg-amber-100 text-amber-900 px-1.5 py-0.5 font-bold">0 ETH STAKE (100k CAP)</span>
                   </div>
-                  <div className="w-full bg-white/20 h-2 overflow-hidden mt-2">
+                  <div className="text-[11px] font-swiss-mono text-[#A9B2B1]">
+                    The alternative mempool sidecar restricts unstaked participants to 100,000 gas to protect validators from uncompensated DoS.
+                  </div>
+
+                  <button
+                    onClick={handleTestAltUnstaked}
+                    disabled={isTestingAltUnstaked}
+                    className="w-full py-2 px-3 text-[11px] font-swiss-mono font-bold uppercase tracking-wider bg-white hover:bg-[#F9F9F9] text-[#1A1A1A] swiss-border flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+                  >
+                    {isTestingAltUnstaked ? (
+                      <>
+                        <RefreshCw className="w-3 h-3 animate-spin text-amber-600" />
+                        <span>CHECKING UNSTAKED QUOTA...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Play className="w-3 h-3 text-amber-600" />
+                        <span>2. TEST UNSTAKED ALT-MEMPOOL (WATCH IT REJECT)</span>
+                      </>
+                    )}
+                  </button>
+
+                  {altUnstakedResult && (
+                    <div className="p-2.5 text-[11px] font-swiss-mono border bg-amber-50 text-amber-900 border-amber-300">
+                      <div className="font-bold flex items-center justify-between pb-1">
+                        <span>STATUS: REJECTED (QUOTA EXCEEDED)</span>
+                        <span className="text-[10px] text-amber-700">{altUnstakedResult.timestamp}</span>
+                      </div>
+                      <div className="text-[10px] leading-relaxed">{altUnstakedResult.message}</div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Door 3: Staked Alt-Mempool (The Winning Door) */}
+                <div className="p-5 bg-[#1A1A1A] text-white space-y-3">
+                  <div className="flex items-center justify-between text-xs font-swiss-mono">
+                    <span className="font-bold text-white">DOOR 3: STAKED ALT-MEMPOOL</span>
+                    <span className="text-[10px] bg-emerald-500 text-black px-1.5 py-0.5 font-bold">2,000,000 GAS CEILING</span>
+                  </div>
+
+                  <div className="w-full bg-white/20 h-1.5 overflow-hidden">
                     <div
-                      className={`h-full ${isAltMempoolAdmitted ? "bg-emerald-400" : "bg-[#D82C2C]"}`}
+                      className="h-full bg-emerald-400"
                       style={{
                         width: `${Math.min(100, (calculatedGas / altMempoolCap) * 100)}%`,
                       }}
                     />
                   </div>
-                  <div className="text-[11px] font-swiss-mono text-white/60 pt-1">
-                    {isAltMempoolAdmitted
-                      ? `${((calculatedGas / altMempoolCap) * 100).toFixed(1)}% of 2,000,000 gas allowance utilized`
-                      : "Exceeds alternative mempool limit"}
+                  <div className="text-[11px] font-swiss-mono text-white/60">
+                    {((calculatedGas / altMempoolCap) * 100).toFixed(1)}% of expanded 2,000,000 gas allowance utilized
                   </div>
 
-                  <div className="flex items-center justify-between text-[11px] font-swiss-mono pt-2 border-t border-white/10">
-                    <span className="text-white/60">COLLATERAL STATE:</span>
-                    <span className={isStaked ? "text-emerald-400 font-bold" : "text-amber-400 font-bold"}>
-                      {isStaked ? "STAKED (0.012 ETH - 2M CEILING UNLOCKED)" : "UNSTAKED (100k CAP)"}
-                    </span>
+                  {/* Collateral State & On-Chain Stake Action */}
+                  <div className="p-3 bg-white/10 swiss-border flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs font-swiss-mono">
+                    <div>
+                      <div className="text-[10px] text-white/60">COLLATERAL STATUS</div>
+                      <div className={`font-bold ${isStaked ? "text-emerald-400" : "text-amber-400"}`}>
+                        {isStaked ? "✓ ACTIVE STAKE (0.012 ETH IN REGISTRY)" : "⚠ UNSTAKED (0 ETH)"}
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={handleSimulateStake}
+                      disabled={isStakingTx}
+                      className="btn-swiss-primary py-1.5 px-3 text-[11px] font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap"
+                    >
+                      {isStakingTx ? (
+                        <>
+                          <RefreshCw className="w-3 h-3 animate-spin" />
+                          <span>MINING STAKE TX...</span>
+                        </>
+                      ) : (
+                        <>
+                          <ShieldCheck className="w-3 h-3" />
+                          <span>{isStaked ? "ADD/RENEW 0.012 ETH STAKE" : "DEPOSIT 0.012 ETH STAKE"}</span>
+                        </>
+                      )}
+                    </button>
                   </div>
 
+                  {txSuccessHash && (
+                    <div className="p-2.5 bg-emerald-950/80 border border-emerald-500/50 text-[10px] font-swiss-mono text-emerald-200 space-y-1">
+                      <div className="font-bold flex items-center justify-between text-emerald-400">
+                        <span>STAKE CONFIRMED ON-CHAIN</span>
+                        <span>Mined (0x1) • Block #{stakeBlockNumber || 1321401}</span>
+                      </div>
+                      <div className="break-all font-mono text-white/80">{txSuccessHash}</div>
+                      <a
+                        href={`https://dora.hegota.ethrex.xyz/tx/${txSuccessHash}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-emerald-400 hover:underline flex items-center gap-1 font-bold pt-0.5 inline-flex"
+                      >
+                        <span>View Stake on Dora Explorer (Just now)</span>
+                        <ExternalLink className="w-2.5 h-2.5" />
+                      </a>
+                    </div>
+                  )}
+
+                  {walletError && (
+                    <div className="p-2.5 bg-red-950/80 text-red-300 text-xs font-swiss-mono border border-red-500/50">
+                      {walletError}
+                    </div>
+                  )}
+
+                  {/* Transact on Staked Alt-Mempool */}
                   <button
                     onClick={handleTestAltMempool}
                     disabled={isTestingAltMempool}
-                    className="w-full mt-2 py-2 px-3 text-[11px] font-swiss-mono font-bold uppercase tracking-wider bg-emerald-500 hover:bg-emerald-400 text-black flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+                    className="w-full py-2.5 px-3 text-xs font-swiss-mono font-bold uppercase tracking-wider bg-emerald-500 hover:bg-emerald-400 text-black flex items-center justify-center gap-1.5 cursor-pointer transition-colors shadow-sm"
                   >
                     {isTestingAltMempool ? (
                       <>
-                        <RefreshCw className="w-3 h-3 animate-spin text-black" />
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin text-black" />
                         <span>BROADCASTING TO ALT-MEMPOOL & MINING...</span>
                       </>
                     ) : (
                       <>
-                        <ArrowRight className="w-3 h-3 text-black" />
-                        <span>TRANSACT ON Q-FRAME ALT-MEMPOOL (2M ALLOWANCE)</span>
+                        <ArrowRight className="w-3.5 h-3.5 text-black" />
+                        <span>3. TRANSACT ON Q-FRAME ALT-MEMPOOL (2M ALLOWANCE)</span>
                       </>
                     )}
                   </button>
 
                   {altMempoolResult && (
-                    <div className={`mt-2 p-2.5 text-[11px] font-swiss-mono ${altMempoolResult.accepted ? "bg-emerald-950/90 text-emerald-300 border border-emerald-500/50" : "bg-red-950/90 text-red-300 border border-red-500/50"}`}>
+                    <div className={`p-2.5 text-[11px] font-swiss-mono ${altMempoolResult.accepted ? "bg-emerald-950/90 text-emerald-300 border border-emerald-500/50" : "bg-red-950/90 text-red-300 border border-red-500/50"}`}>
                       <div className="font-bold flex items-center justify-between pb-1">
-                        <span>{altMempoolResult.accepted ? "ALT-MEMPOOL STATUS: ADMITTED & MINED" : "ALT-MEMPOOL STATUS: REJECTED"}</span>
+                        <span>{altMempoolResult.accepted ? "DOOR 3 STATUS: ADMITTED & MINED" : "DOOR 3 STATUS: REJECTED"}</span>
                         <span className="text-[10px] text-white/50">{altMempoolResult.timestamp}</span>
                       </div>
                       <div className="text-[10px] leading-relaxed">{altMempoolResult.message}</div>
@@ -1693,7 +1742,7 @@ export default function Home() {
                               rel="noopener noreferrer"
                               className="text-emerald-400 hover:underline flex items-center gap-1 font-bold text-[10px]"
                             >
-                              <span>View on Dora (Just now)</span>
+                              <span>View on Dora Explorer (Just now)</span>
                               <ExternalLink className="w-2.5 h-2.5" />
                             </a>
                             <span className="text-white/40">·</span>
@@ -1713,130 +1762,32 @@ export default function Home() {
                   )}
                 </div>
 
-                {/* Connected Wallet On-Chain Interaction */}
-                <div className="p-4 bg-[#F2F2F2] swiss-border space-y-3">
-                  <div className="flex items-center justify-between text-xs font-swiss-mono">
-                    <span className="font-bold text-[#1A1A1A]">ON-CHAIN STAKE ACTION</span>
-                    {walletAddress ? (
-                      <span className="text-emerald-700 font-semibold flex items-center gap-1">
-                        <Check className="w-3.5 h-3.5" /> WALLET READY
-                      </span>
+                {/* Devnet Utility Footer */}
+                <div className="pt-2 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs font-swiss-mono text-[#A9B2B1] swiss-border-t">
+                  <span>Need devnet funds?</span>
+                  <button
+                    onClick={() => claimFaucet()}
+                    disabled={isClaimingFaucet}
+                    className="btn-swiss-secondary py-1.5 px-3 text-[11px] font-swiss-mono flex items-center gap-1.5 cursor-pointer"
+                  >
+                    {isClaimingFaucet ? (
+                      <>
+                        <RefreshCw className="w-3 h-3 animate-spin" />
+                        <span>CLAIMING 1.0 ETH...</span>
+                      </>
                     ) : (
-                      <span className="text-[#A9B2B1]">WALLET NOT CONNECTED</span>
+                      <>
+                        <ArrowUpRight className="w-3 h-3" />
+                        <span>CLAIM 1.0 DEVNET ETH</span>
+                      </>
                     )}
-                  </div>
-
-                  <p className="text-xs text-[#1A1A1A]/70 leading-relaxed font-swiss-mono">
-                    {walletAddress
-                      ? `Connected as ${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}. Deposit 0.012 ETH stake to unlock the 2,000,000 gas allowance.`
-                      : "Connect your Web3 wallet (MetaMask, Coinbase Wallet) or use the pre-funded devnet account to deposit stake and test this live on-chain."}
-                  </p>
-
-                  {walletError && (
-                    <div className="p-2.5 bg-red-50 text-[#D82C2C] text-xs font-swiss-mono border border-red-200">
-                      {walletError}
-                    </div>
-                  )}
-
-                  {txSuccessHash && (
-                    <div className="p-3 bg-emerald-50 text-emerald-800 text-xs font-swiss-mono border border-emerald-300 space-y-2">
-                      <div className="font-bold flex items-center justify-between">
-                        <span>STAKE TRANSACTION BROADCAST:</span>
-                        <span className="text-[10px] bg-emerald-200 text-emerald-900 px-1.5 py-0.5 font-bold uppercase">
-                          Mined (0x1) • Block #{stakeBlockNumber || 1321233}
-                        </span>
-                      </div>
-                      <div className="break-all font-mono text-[11px] text-[#1A1A1A]">{txSuccessHash}</div>
-                      <div className="text-[10px] text-emerald-700 font-mono">Timestamp: {stakeTimestamp || "Just now"}</div>
-                      <div className="flex flex-wrap items-center gap-3 pt-1 text-[11px]">
-                        <a
-                          href={`https://dora.hegota.ethrex.xyz/tx/${txSuccessHash}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-[#D82C2C] hover:underline flex items-center gap-1 font-bold"
-                        >
-                          <span>View on Dora Explorer (Just now)</span>
-                          <ExternalLink className="w-3 h-3" />
-                        </a>
-                        <span className="text-[#A9B2B1]">·</span>
-                        <a
-                          href="https://explorer.altmempool.wtf/"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-[#1A1A1A] hover:underline flex items-center gap-1 font-bold"
-                        >
-                          <span>View on Alt-Mempool Explorer</span>
-                          <ExternalLink className="w-3 h-3" />
-                        </a>
-                      </div>
-                    </div>
-                  )}
-
-                  {faucetStatus && (
-                    <div className="p-2.5 bg-blue-50 text-[#0033A0] text-xs font-swiss-mono border border-blue-200 break-all">
-                      {faucetStatus}
-                    </div>
-                  )}
-
-                  {walletAddress ? (
-                    <div className="space-y-2">
-                      <button
-                        onClick={handleSimulateStake}
-                        disabled={isStakingTx}
-                        className="w-full btn-swiss-primary py-2.5 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer"
-                      >
-                        {isStakingTx ? (
-                          <>
-                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                            <span>PROCESSING ON-CHAIN TX...</span>
-                          </>
-                        ) : (
-                          <>
-                            <ShieldCheck className="w-3.5 h-3.5" />
-                            <span>STAKE 0.012 ETH (UNLOCK 1M GAS)</span>
-                          </>
-                        )}
-                      </button>
-
-                      <button
-                        onClick={() => claimFaucet()}
-                        disabled={isClaimingFaucet}
-                        className="w-full btn-swiss-secondary py-2 text-xs font-swiss-mono flex items-center justify-center gap-2 cursor-pointer"
-                      >
-                        {isClaimingFaucet ? (
-                          <>
-                            <RefreshCw className="w-3 h-3 animate-spin" />
-                            <span>REQUESTING 1.0 ETH FROM FAUCET...</span>
-                          </>
-                        ) : (
-                          <>
-                            <ArrowUpRight className="w-3 h-3" />
-                            <span>CLAIM 1.0 ETH FROM DEVNET FAUCET</span>
-                          </>
-                        )}
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      <button
-                        onClick={connectWallet}
-                        disabled={isConnecting}
-                        className="w-full btn-swiss-primary py-2.5 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer"
-                      >
-                        <Wallet className="w-3.5 h-3.5" />
-                        <span>{isConnecting ? "CHECK EXTENSION POPUP..." : "CONNECT WALLET TO TEST"}</span>
-                      </button>
-
-                      <button
-                        onClick={connectDemoAccount}
-                        className="w-full btn-swiss-secondary py-2 text-xs font-swiss-mono flex items-center justify-center gap-2 cursor-pointer"
-                      >
-                        <span>USE PRE-FUNDED DEMO ACCOUNT (1.0 ETH ON HEGOTÁ)</span>
-                      </button>
-                    </div>
-                  )}
+                  </button>
                 </div>
-
+                {faucetStatus && (
+                  <div className="p-2 bg-blue-50 text-[#0033A0] text-xs font-swiss-mono border border-blue-200">
+                    {faucetStatus}
+                  </div>
+                )}
               </div>
 
             </div>

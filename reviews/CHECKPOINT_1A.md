@@ -1,4 +1,4 @@
-# Checkpoint 1A: Post-Quantum Gas Calibration and Bounds
+`# Checkpoint 1A: Post-Quantum Gas Calibration and Bounds
 
 ## Scope & Target Bounds
 This checkpoint documents the computational profile and gas consumption of `PQBenchmarkAccount.sol` under Solidity `0.8.28` (`via_ir = true`, `evm_version = "cancun"`).

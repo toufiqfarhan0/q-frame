@@ -44,3 +44,4 @@ $$\text{nonceKey} := \text{leafIndex}$$
 1. **Independent Replacement:** If transaction on Leaf $k$ stalls, the user can abandon Leaf $k$ and broadcast on Leaf $k+1$ without queue head-of-line blocking.
 2. **Concurrent Admission:** Multiple transactions across different leaves can be held in the alternative mempool simultaneously (`step_12_tx_keyed_nonces`).
 3. **On-Chain Retirement:** Once Leaf $k$ is mined, sequence advances $0 \to 1$. Any subsequent transaction referencing Leaf $k$ with sequence 0 reverts at the `NONCE_MANAGER` validation check before frame execution, preventing replay attacks at zero execution cost.
+

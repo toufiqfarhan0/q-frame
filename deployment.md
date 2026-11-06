@@ -53,3 +53,4 @@ The deployment and all executed transactions can be inspected directly on the pu
 * **Contract Overview:** [`https://dora.hegota.ethrex.xyz/address/0xe5c5A34833db3A90E30adCD98f2955E36496483B`](https://dora.hegota.ethrex.xyz/address/0xe5c5A34833db3A90E30adCD98f2955E36496483B)
 * **Alt-Mempool Explorer:** [`https://explorer.altmempool.wtf/`](https://explorer.altmempool.wtf/)
 * **Official Hegotá Faucet:** [`https://faucet.hegota.ethrex.xyz/`](https://faucet.hegota.ethrex.xyz/)
+

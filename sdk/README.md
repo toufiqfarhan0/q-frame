@@ -1,4 +1,4 @@
-# Q-Frame SDK (`@toufiqfarhan0/q-frame-sdk`)
+# Q-Frame SDK (`q-frame-sdk`)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -20,7 +20,7 @@ Furthermore:
 
 ## The Solution: EIP-8250 Keyed Nonces + LeafManager
 
-`@toufiqfarhan0/q-frame-sdk` provides the `LeafManager`, an abstraction enforcing strict cryptographic invariants:
+`q-frame-sdk` provides the `LeafManager`, an abstraction enforcing strict cryptographic invariants:
 
 1. **Write-Ahead Journal**: Marks leaf channels `RESERVED` locally *before* signing. Once reserved, a leaf is never re-allocated even if the transaction drops.
 2. **On-Chain Nullifier Verification**: Reads the Ethereum Foundation's `NONCE_MANAGER` predeploy (`0x...8250`) via direct `eth_getStorageAt` reads.
@@ -34,11 +34,11 @@ Furthermore:
 ## Installation
 
 ```bash
-npm install @toufiqfarhan0/q-frame-sdk viem
+npm install q-frame-sdk viem
 # or
-yarn add @toufiqfarhan0/q-frame-sdk viem
+yarn add q-frame-sdk viem
 # or
-pnpm add @toufiqfarhan0/q-frame-sdk viem
+pnpm add q-frame-sdk viem
 ```
 
 ---
@@ -48,7 +48,7 @@ pnpm add @toufiqfarhan0/q-frame-sdk viem
 ### 1. Initialize `LeafManager`
 
 ```typescript
-import { LeafManager } from "@toufiqfarhan0/q-frame-sdk";
+import { LeafManager } from "q-frame-sdk";
 
 const manager = new LeafManager({
   rpcUrl: "https://rpc1.hegota.ethrex.xyz", // Hegotá Devnet or local node

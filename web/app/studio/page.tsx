@@ -47,7 +47,7 @@ export default function StudioPage() {
     );
   }
 
-  const snippetInit = `import { LeafManager } from "@qframe/sdk";
+  const snippetInit = `import { LeafManager } from "q-frame-sdk";
 
 // Initialize the SDK with Devnet configuration
 const manager = new LeafManager({
@@ -117,7 +117,7 @@ if (route.targetMempool === "alt-mempool") {
 
               <div className="flex items-center gap-2">
                 <span className="text-xs font-swiss-mono px-3 py-1.5 bg-[#1A1A1A] text-white font-bold">
-                  PACKAGE: @qframe/sdk v1.0
+                  PACKAGE: q-frame-sdk v0.1.0
                 </span>
               </div>
             </div>

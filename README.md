@@ -86,7 +86,11 @@ It is important to emphasize that **safe fee-bumping with one-time keys remains 
 
 ## The Q-Frame LeafManager SDK
 
-To address the practical operational challenges of stateful post-quantum hash trees, we packaged our EIP-8250 research into a modular client SDK ([`mempool-workshop/src/sdk/LeafManager.ts`](./mempool-workshop/src/sdk/LeafManager.ts)).
+To address the practical operational challenges of stateful post-quantum hash trees, we packaged our EIP-8250 research into a published client SDK on npm ([`q-frame-sdk`](https://www.npmjs.com/package/q-frame-sdk)):
+
+```bash
+npm install q-frame-sdk viem
+```
 
 ### The Core Problem: "On-Chain Spent" $\neq$ "Signature Revealed"
 A stateful hash-based leaf is exposed as soon as a transaction is signed and broadcast. If the transaction drops or gets abandoned in the mempool, its on-chain sequence remains `0`. If a user restores their wallet on a new device, a naive on-chain scan would re-allocate that unmined leaf, revealing a second signature and destroying the account's security.
@@ -99,7 +103,7 @@ The `LeafManager` manages a robust four-state machine:
 * **`BURNED`**: Explicitly retired via fee-bumping or cancellation policy.
 
 ```typescript
-import { LeafManager } from "./src/sdk/LeafManager.js";
+import { LeafManager } from "q-frame-sdk";
 
 const manager = new LeafManager({
   rpcUrl: "https://rpc1.hegota.ethrex.xyz",

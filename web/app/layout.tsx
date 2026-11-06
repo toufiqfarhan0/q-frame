@@ -5,6 +5,9 @@ import { WalletProvider } from "./context/WalletContext";
 export const metadata: Metadata = {
   metadataBase: new URL("https://qframe.network"),
   title: "Q-FRAME — Post-Quantum Frame Transactions on Alternative Mempools",
+  other: {
+    "darkreader-lock": "true",
+  },
   description:
     "EIP-8141 & ERC-8421 implementation benchmarking NIST FIPS 205 quantum-resistant signature verification above canonical mempool gas barriers. Built at ETHGlobal Mumbai 2026.",
   keywords: [
@@ -58,6 +61,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning className="h-full bg-white text-[#1A1A1A]">
+      <head>
+        <meta name="darkreader-lock" />
+      </head>
       <body suppressHydrationWarning className="min-h-full flex flex-col antialiased selection:bg-[#D82C2C] selection:text-white">
         <WalletProvider>{children}</WalletProvider>
       </body>

@@ -21,6 +21,7 @@ import {
   AlertTriangle,
   FileCode,
   Terminal,
+  Database,
 } from "lucide-react";
 
 export default function StudioPage() {
@@ -84,6 +85,17 @@ if (route.targetMempool === "alt-mempool") {
   console.log("Routed to Canonical Mempool (100k gas wall)");
 }`;
 
+  const snippetArkiv = `// Ephemeral OTS leaf coordination on Arkiv DB-Chain
+// Prevents cross-device double-signing with native 10m TTL
+import { publishArkivReservation, fetchArkivReservations } from "q-frame-sdk/arkiv";
+
+// 1. Commit ephemeral leaf reservation with automatic 10-minute TTL
+await publishArkivReservation(walletAddress, 0, nonceKey, "RESERVE");
+
+// 2. Query active reservations across all user devices
+const activeEntities = await fetchArkivReservations(walletAddress);
+console.log("Active Arkiv reservations:", activeEntities.length);`;
+
   return (
     <div className="min-h-screen bg-white text-[#1A1A1A] flex flex-col font-sans selection:bg-[#D82C2C] selection:text-white">
       <Navbar />
@@ -138,7 +150,7 @@ if (route.targetMempool === "alt-mempool") {
             </p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 text-xs font-swiss-mono">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-5 text-xs font-swiss-mono">
             {/* Card 1: The 12-Leaf Matrix */}
             <div className="p-5 bg-white swiss-border flex flex-col justify-between space-y-3">
               <div>
@@ -184,7 +196,7 @@ if (route.targetMempool === "alt-mempool") {
                   <Flame className="w-4 h-4 text-rose-700" />
                 </div>
                 <h3 className="font-bold text-sm text-[#1A1A1A] font-swiss-display">
-                  3. Key-Burning Fee Bump
+                  3. Key-Burning Bump
                 </h3>
                 <p className="text-[#A9B2B1] mt-2 leading-relaxed font-sans text-xs">
                   When speeding up a transaction, standard wallets re-sign under the same nonce. For OTS, that is fatal!
@@ -212,6 +224,25 @@ if (route.targetMempool === "alt-mempool") {
               </div>
               <div className="p-2 bg-emerald-50 text-emerald-900 border border-emerald-200 text-[11px]">
                 Safety Gap: +16 uncollided leaves
+              </div>
+            </div>
+
+            {/* Card 5: Arkiv DB-Chain Ephemeral Journal */}
+            <div className="p-5 bg-white swiss-border flex flex-col justify-between space-y-3">
+              <div>
+                <div className="w-8 h-8 bg-purple-100 text-purple-800 flex items-center justify-center font-bold mb-3 border border-purple-300">
+                  <Database className="w-4 h-4 text-purple-700" />
+                </div>
+                <h3 className="font-bold text-sm text-[#1A1A1A] font-swiss-display">
+                  5. Arkiv DB-Chain Journal
+                </h3>
+                <p className="text-[#A9B2B1] mt-2 leading-relaxed font-sans text-xs">
+                  Coordinates unspent leaves across multiple devices using <strong>Arkiv DB-Chain</strong>.
+                  Entities carry a <strong>10-minute native TTL</strong>: if a mempool tx drops unmined, Arkiv automatically prunes it without centralized servers!
+                </p>
+              </div>
+              <div className="p-2 bg-purple-50 text-purple-900 border border-purple-200 text-[11px]">
+                TTL: 10m Auto-Pruning on Rabdi
               </div>
             </div>
           </div>
@@ -329,6 +360,29 @@ if (route.targetMempool === "alt-mempool") {
                   </pre>
                   <p className="text-xs text-[#1A1A1A]/70 font-sans leading-relaxed">
                     Evaluates transaction verification gas requirements against the 100k canonical mempool ceiling. Automatically routes heavy post-quantum transactions (&gt;100k gas) to the ERC-8421 sidecar with staked collateral.
+                  </p>
+                </div>
+
+                {/* Step 5 Code: Arkiv DB-Chain */}
+                <div className="bg-white swiss-border p-6 shadow-sm space-y-3 border-purple-900">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-swiss-mono font-bold text-purple-900 uppercase flex items-center gap-1.5">
+                      <Database className="w-3.5 h-3.5 text-purple-600" />
+                      <span>STEP 5: SYNC JOURNAL ON ARKIV DB-CHAIN</span>
+                    </span>
+                    <button
+                      onClick={() => copyCode(snippetArkiv, "arkiv")}
+                      className="inline-flex items-center gap-1 text-[11px] font-swiss-mono text-[#A9B2B1] hover:text-[#1A1A1A] transition-colors"
+                    >
+                      {copiedSnippet === "arkiv" ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                      <span>{copiedSnippet === "arkiv" ? "COPIED" : "COPY CODE"}</span>
+                    </button>
+                  </div>
+                  <pre className="p-4 bg-[#1A1A1A] text-purple-300 font-mono text-xs overflow-x-auto leading-relaxed swiss-border">
+                    <code>{snippetArkiv}</code>
+                  </pre>
+                  <p className="text-xs text-[#1A1A1A]/70 font-sans leading-relaxed">
+                    Publishes ephemeral leaf reservations to the <strong>Arkiv Rabdi DB-Chain</strong> (<code className="font-mono">qframe.leaf-journal</code>) with a 10-minute native TTL. If an alt-mempool transaction is dropped unmined, Arkiv automatically prunes the record, releasing the leaf without requiring a centralized server.
                   </p>
                 </div>
               </div>

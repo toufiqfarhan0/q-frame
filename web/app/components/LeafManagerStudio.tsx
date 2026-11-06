@@ -21,8 +21,18 @@ import {
   Info,
   Key,
   ShieldAlert,
+  Clock,
 } from "lucide-react";
 import { LeafManager, LeafStatus, JournalEntry, MempoolRouteDecision, Address } from "@/lib/LeafManager";
+import {
+  fetchArkivReservations,
+  publishArkivReservation,
+  switchOrAddRabdiNetwork,
+  ARKIV_CHAIN_ID,
+  ARKIV_FAUCET_URL,
+  ARKIV_EXPLORER_URL,
+  type ArkivJournalRecord,
+} from "@/lib/arkivClient";
 
 const RPC_URL = "https://rpc1.hegota.ethrex.xyz";
 const NONCE_MANAGER = "0x0000000000000000000000000000000000008250";
@@ -65,7 +75,7 @@ export default function LeafManagerStudio({ userWallet }: LeafManagerStudioProps
   const [journal, setJournal] = useState<JournalEntry[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isScanning, setIsScanning] = useState<boolean>(false);
-  const [activeTab, setActiveTab] = useState<"channels" | "bump" | "recovery" | "router">("channels");
+  const [activeTab, setActiveTab] = useState<"channels" | "bump" | "recovery" | "router" | "arkiv">("channels");
   const [consoleLogs, setConsoleLogs] = useState<string[]>([]);
   const [copiedText, setCopiedText] = useState<string | null>(null);
 
@@ -89,6 +99,12 @@ export default function LeafManagerStudio({ userWallet }: LeafManagerStudioProps
   const [routerGas, setRouterGas] = useState<number>(259247);
   const [routerIsStaked, setRouterIsStaked] = useState<boolean>(true);
   const [routeDecision, setRouteDecision] = useState<MempoolRouteDecision | null>(null);
+
+  // Workflow: Arkiv DB-Chain Integration
+  const [arkivEntities, setArkivEntities] = useState<ArkivJournalRecord[]>([]);
+  const [isArkivLoading, setIsArkivLoading] = useState<boolean>(false);
+  const [isArkivPublishing, setIsArkivPublishing] = useState<boolean>(false);
+  const [selectedLeafForArkiv, setSelectedLeafForArkiv] = useState<number>(0);
 
   const addLog = useCallback((msg: string) => {
     const timestamp = new Date().toLocaleTimeString();
@@ -215,6 +231,67 @@ export default function LeafManagerStudio({ userWallet }: LeafManagerStudioProps
     }
   };
 
+  // Arkiv DB-Chain Handlers
+  const handleQueryArkiv = useCallback(async () => {
+    setIsArkivLoading(true);
+    addLog(`Querying Arkiv DB-Chain entities for ${activeWallet.slice(0, 10)}... (Rabdi Testnet Chain ID: 7794095)`);
+    try {
+      const records = await fetchArkivReservations(activeWallet);
+      setArkivEntities(records);
+      addLog(`✓ Synchronized with Arkiv DB-Chain: Found ${records.length} active time-scoped entity records`);
+    } catch (err: any) {
+      addLog(`✕ Arkiv query notice: ${err?.message || String(err)}`);
+    } finally {
+      setIsArkivLoading(false);
+    }
+  }, [activeWallet, addLog]);
+
+  const handlePublishToArkiv = async () => {
+    setIsArkivPublishing(true);
+    const targetLeaf = leaves[selectedLeafForArkiv];
+    if (!targetLeaf) {
+      addLog("✕ No leaf selected to commit to Arkiv");
+      setIsArkivPublishing(false);
+      return;
+    }
+
+    addLog(`Publishing leaf #${targetLeaf.leafIndex} reservation to Arkiv DB-Chain with 10-minute native TTL...`);
+    try {
+      const ethereum = typeof window !== "undefined" ? (window as any).ethereum : undefined;
+      const nonceHex = `0x${targetLeaf.nonceKey.toString(16).padStart(64, "0")}` as `0x${string}`;
+      const res = await publishArkivReservation(
+        activeWallet,
+        Number(targetLeaf.leafIndex),
+        nonceHex,
+        "RESERVE",
+        ethereum
+      );
+      addLog(`✓ Entity registered on Arkiv DB-Chain! Entity Key: ${res.entityKey} (TTL: 10m)`);
+      if (res.txHash) {
+        addLog(`  Rabdi Tx Hash: ${res.txHash}`);
+      }
+      await handleQueryArkiv();
+    } catch (err: any) {
+      addLog(`✕ Failed to publish to Arkiv: ${err?.message || String(err)}`);
+    } finally {
+      setIsArkivPublishing(false);
+    }
+  };
+
+  const handleSwitchRabdi = async () => {
+    try {
+      const ethereum = typeof window !== "undefined" ? (window as any).ethereum : undefined;
+      if (!ethereum) {
+        alert("MetaMask not detected. Please install MetaMask to switch to Arkiv Rabdi Testnet.");
+        return;
+      }
+      await switchOrAddRabdiNetwork(ethereum);
+      addLog(`✓ Connected MetaMask to Arkiv Rabdi Testnet (Chain ID 7794095)`);
+    } catch (err: any) {
+      addLog(`✕ Error switching to Rabdi: ${err?.message || String(err)}`);
+    }
+  };
+
   // Reset Demo State
   const handleReset = async () => {
     manager.resetJournal(0n);
@@ -275,7 +352,7 @@ export default function LeafManagerStudio({ userWallet }: LeafManagerStudioProps
         </div>
 
         {/* Live Context Bar */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3 py-6 font-mono text-xs border-b border-[#E2E6E6]">
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 py-6 font-mono text-xs border-b border-[#E2E6E6]">
           <div className="p-3 bg-[#F2F2F2] border border-[#E2E6E6]">
             <div className="text-[10px] text-[#A9B2B1] uppercase font-bold">Target Account</div>
             <div className="font-bold text-[#1A1A1A] truncate mt-1" title={activeWallet}>
@@ -304,6 +381,15 @@ export default function LeafManagerStudio({ userWallet }: LeafManagerStudioProps
             <div className="text-[10px] text-slate-700 uppercase font-bold">Unused Channels</div>
             <div className="text-lg font-bold text-slate-900 mt-0.5">{countUnused}</div>
           </div>
+          <div className="p-3 bg-purple-50 border border-purple-200">
+            <div className="text-[10px] text-purple-800 uppercase font-bold flex items-center justify-between">
+              <span>Arkiv DB-Chain</span>
+              <span className="w-1.5 h-1.5 rounded-full bg-purple-500 animate-pulse" />
+            </div>
+            <div className="text-lg font-bold text-purple-700 mt-0.5">
+              {arkivEntities.length} <span className="text-[10px] font-normal text-purple-600">active</span>
+            </div>
+          </div>
         </div>
 
         {/* Studio Workspace: Tabs and Main View */}
@@ -314,7 +400,7 @@ export default function LeafManagerStudio({ userWallet }: LeafManagerStudioProps
             <div className="flex border-b border-[#1A1A1A] bg-[#F2F2F2]">
               <button
                 onClick={() => setActiveTab("channels")}
-                className={`flex-1 py-3 px-3 text-xs font-mono font-bold text-center border-r border-[#1A1A1A] transition-colors ${
+                className={`flex-1 py-3 px-2 text-xs font-mono font-bold text-center border-r border-[#1A1A1A] transition-colors ${
                   activeTab === "channels" ? "bg-[#1A1A1A] text-white" : "text-[#1A1A1A] hover:bg-white"
                 }`}
               >
@@ -322,7 +408,7 @@ export default function LeafManagerStudio({ userWallet }: LeafManagerStudioProps
               </button>
               <button
                 onClick={() => setActiveTab("bump")}
-                className={`flex-1 py-3 px-3 text-xs font-mono font-bold text-center border-r border-[#1A1A1A] transition-colors ${
+                className={`flex-1 py-3 px-2 text-xs font-mono font-bold text-center border-r border-[#1A1A1A] transition-colors ${
                   activeTab === "bump" ? "bg-[#1A1A1A] text-white" : "text-[#1A1A1A] hover:bg-white"
                 }`}
               >
@@ -330,7 +416,7 @@ export default function LeafManagerStudio({ userWallet }: LeafManagerStudioProps
               </button>
               <button
                 onClick={() => setActiveTab("recovery")}
-                className={`flex-1 py-3 px-3 text-xs font-mono font-bold text-center border-r border-[#1A1A1A] transition-colors ${
+                className={`flex-1 py-3 px-2 text-xs font-mono font-bold text-center border-r border-[#1A1A1A] transition-colors ${
                   activeTab === "recovery" ? "bg-[#1A1A1A] text-white" : "text-[#1A1A1A] hover:bg-white"
                 }`}
               >
@@ -338,11 +424,23 @@ export default function LeafManagerStudio({ userWallet }: LeafManagerStudioProps
               </button>
               <button
                 onClick={() => setActiveTab("router")}
-                className={`flex-1 py-3 px-3 text-xs font-mono font-bold text-center transition-colors ${
+                className={`flex-1 py-3 px-2 text-xs font-mono font-bold text-center border-r border-[#1A1A1A] transition-colors ${
                   activeTab === "router" ? "bg-[#1A1A1A] text-white" : "text-[#1A1A1A] hover:bg-white"
                 }`}
               >
                 4. ROUTER
+              </button>
+              <button
+                onClick={() => {
+                  setActiveTab("arkiv");
+                  handleQueryArkiv();
+                }}
+                className={`flex-1 py-3 px-2 text-xs font-mono font-bold text-center transition-colors flex items-center justify-center gap-1 ${
+                  activeTab === "arkiv" ? "bg-purple-900 text-white" : "text-purple-950 hover:bg-purple-100"
+                }`}
+              >
+                <Database className="w-3 h-3 text-purple-400" />
+                <span>5. ARKIV</span>
               </button>
             </div>
 
@@ -604,6 +702,136 @@ export default function LeafManagerStudio({ userWallet }: LeafManagerStudioProps
                     <p className="text-[11px] leading-relaxed opacity-90">{routeDecision.reason}</p>
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* TAB 5: ARKIV DB-CHAIN EPHEMERAL JOURNAL */}
+            {activeTab === "arkiv" && (
+              <div className="p-6 bg-white border border-purple-900 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-xs font-mono font-bold text-purple-950 uppercase">
+                    <Database className="w-4 h-4 text-purple-600" />
+                    <span>Arkiv DB-Chain Ephemeral Journal</span>
+                  </div>
+                  <span className="px-2 py-0.5 bg-purple-100 text-purple-900 text-[10px] font-mono font-bold border border-purple-200">
+                    Rabdi #7794095
+                  </span>
+                </div>
+
+                <p className="text-xs text-[#1A1A1A]/80 leading-relaxed">
+                  Post-quantum keys cannot be shared across multiple devices or bots without risking double-signing.
+                  Q-Frame syncs the Write-Ahead Journal with <strong>Arkiv DB-Chain</strong> using native <strong>10-minute auto-expiring TTLs</strong>.
+                  If a mempool transaction drops unmined, Arkiv automatically prunes the reservation—freeing the leaf without any central database!
+                </p>
+
+                <div className="p-3 bg-purple-50/70 border border-purple-200 text-xs font-mono space-y-2">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-[#A9B2B1] uppercase font-bold">Arkiv Schema:</span>
+                    <span className="font-bold text-purple-900">qframe.leaf-journal</span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-[#A9B2B1] uppercase font-bold">Expiration Rule:</span>
+                    <span className="font-bold text-purple-900">ExpirationTime.fromMinutes(10)</span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-[#A9B2B1] uppercase font-bold">Network:</span>
+                    <a
+                      href={ARKIV_EXPLORER_URL}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-purple-600 underline font-bold flex items-center gap-1 hover:text-purple-800"
+                    >
+                      <span>Rabdi Testnet</span>
+                      <ExternalLink className="w-2.5 h-2.5" />
+                    </a>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] font-mono text-[#A9B2B1] uppercase font-bold">
+                    Select Channel Leaf to Commit to Arkiv:
+                  </label>
+                  <select
+                    value={selectedLeafForArkiv}
+                    onChange={(e) => setSelectedLeafForArkiv(Number(e.target.value))}
+                    className="w-full p-2 bg-white border border-[#1A1A1A] font-mono text-xs font-bold"
+                  >
+                    {leaves.map((l, i) => (
+                      <option key={i} value={i}>
+                        Leaf #{l.leafIndex} (State: {l.localState}, NonceKey: 0x{l.nonceKey.toString(16).slice(0, 8)}...)
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 pt-2">
+                  <button
+                    onClick={handlePublishToArkiv}
+                    disabled={isArkivPublishing}
+                    className="py-2.5 px-3 bg-purple-900 hover:bg-purple-950 text-white font-mono text-xs font-bold flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50"
+                  >
+                    <Clock className="w-3.5 h-3.5 text-purple-300" />
+                    <span>{isArkivPublishing ? "Publishing..." : "Commit (10m TTL)"}</span>
+                  </button>
+                  <button
+                    onClick={handleQueryArkiv}
+                    disabled={isArkivLoading}
+                    className="py-2.5 px-3 bg-white border border-purple-900 text-purple-900 font-mono text-xs font-bold hover:bg-purple-50 flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isArkivLoading ? "animate-spin" : ""}`} />
+                    <span>Query Entities</span>
+                  </button>
+                </div>
+
+                <div className="pt-2 border-t border-[#E2E6E6] flex items-center justify-between text-[11px] font-mono">
+                  <button
+                    onClick={handleSwitchRabdi}
+                    className="text-purple-700 hover:text-purple-900 underline font-bold flex items-center gap-1"
+                  >
+                    <span>Connect Rabdi to MetaMask</span>
+                  </button>
+                  <a
+                    href={ARKIV_FAUCET_URL}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[#D82C2C] hover:underline font-bold flex items-center gap-1"
+                  >
+                    <span>Claim tGLM Faucet</span>
+                    <ExternalLink className="w-2.5 h-2.5" />
+                  </a>
+                </div>
+
+                {/* Arkiv Entities List */}
+                <div className="space-y-2 pt-2">
+                  <div className="text-[10px] font-mono text-[#A9B2B1] uppercase font-bold flex items-center justify-between">
+                    <span>Live Arkiv DB-Chain Records ({arkivEntities.length})</span>
+                    <span className="text-purple-600">Auto-Pruned after Expiration</span>
+                  </div>
+                  {arkivEntities.length === 0 ? (
+                    <div className="p-3 bg-slate-50 border border-slate-200 text-slate-500 font-mono text-[11px] text-center italic">
+                      No active Arkiv entities found for this account. Click "Commit (10m TTL)" or "Query Entities".
+                    </div>
+                  ) : (
+                    <div className="max-h-36 overflow-y-auto space-y-1.5 font-mono text-xs pr-1">
+                      {arkivEntities.map((ent, idx) => (
+                        <div key={idx} className="p-2 bg-purple-50 border border-purple-200 flex items-center justify-between">
+                          <div>
+                            <div className="font-bold text-purple-950 text-[11px]">Leaf #{ent.leafIndex} • {ent.action}</div>
+                            <div className="text-[9px] text-[#A9B2B1] truncate max-w-[180px]" title={ent.key}>Key: {ent.key}</div>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 bg-purple-200 text-purple-900 rounded">
+                              {ent.status}
+                            </span>
+                            {ent.expiresAtBlock && (
+                              <div className="text-[9px] text-purple-600 mt-0.5">Exp: Blk #{ent.expiresAtBlock}</div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 

@@ -255,6 +255,26 @@ The devnet environment runs pinned client commits:
 
 ---
 
+## Arkiv DB-Chain Integration (Decentralized Ephemeral Journal)
+
+To solve multi-device state synchronization and eliminate key-reuse attacks for One-Time Signatures (OTS) without relying on a centralized database, Q-Frame integrates the **Arkiv Network** (Rabdi DB-Chain Testnet, Chain ID `7794095`):
+
+* **Decentralized Ephemeral Journal:** When a transaction is submitted to the ERC-8421 alternative mempool, the client writes the leaf channel reservation to the `qframe.leaf-journal` schema on Arkiv with an automatic **10-minute native TTL** (`ExpirationTime.fromMinutes(10)`).
+* **Self-Healing Abandonment Pruning:** If a transaction is dropped or abandoned in the mempool without being mined, Arkiv's native block-time expiration automatically prunes the record, releasing the leaf channel without any centralized server or cron worker.
+* **Writer Wallet Address:** `0x2644Dd7905bE00422BBc79aF4E158993031fe9Ed`
+* **Arkiv Diagnostic Query (Run via CLI):**
+  ```bash
+  node web/scripts/test-arkiv.js
+  ```
+* **Arkiv Track Submission Documents:**
+  - [`arkiv/schema.md`](./arkiv/schema.md) — Entity schema, fields, ownership, and expiration rules.
+  - [`arkiv/why-arkiv.md`](./arkiv/why-arkiv.md) — Architectural analysis: Why Arkiv DB-chain with TTL beats PostgreSQL and prevents OTS key collisions.
+  - [`arkiv/how-you-use-arkiv.md`](./arkiv/how-you-use-arkiv.md) — Indexed filters, permissions, and UI visibility.
+  - [`arkiv/reach.md`](./arkiv/reach.md) — Target users, ecosystem reach, and post-Mumbai roadmap.
+  - [`arkiv/friction.md`](./arkiv/friction.md) — Detailed developer feedback and friction log for `@arkiv-network/sdk`.
+
+---
+
 ## AI Disclosure
 
 In accordance with ETHGlobal hackathon submission guidelines: Generative AI tools (Claude 3.7 Sonnet and Antigravity) were utilized for Next.js frontend component scaffolding, test boilerplate generation, and ASCII diagram formatting. The smart contracts, Foundry benchmark assertions, gas curve derivations, and EIP-8250 keyed-nonce architectural designs were conceptualized and validated directly by the project team.

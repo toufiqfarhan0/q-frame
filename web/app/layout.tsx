@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import { WalletProvider } from "./context/WalletContext";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://qframe.network"),
@@ -56,9 +57,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="h-full bg-white text-[#1A1A1A]">
-      <body className="min-h-full flex flex-col antialiased selection:bg-[#D82C2C] selection:text-white">
-        {children}
+    <html lang="en" suppressHydrationWarning className="h-full bg-white text-[#1A1A1A]">
+      <body suppressHydrationWarning className="min-h-full flex flex-col antialiased selection:bg-[#D82C2C] selection:text-white">
+        <WalletProvider>{children}</WalletProvider>
       </body>
     </html>
   );

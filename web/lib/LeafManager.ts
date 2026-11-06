@@ -204,6 +204,32 @@ export class LeafManager {
     return Array.from(this.journal.values());
   }
 
+  public getJournal(): JournalEntry[] {
+    return this.exportJournal();
+  }
+
+  public getCursor(): bigint {
+    return this.cursor;
+  }
+
+  public setCursor(cursor: bigint): void {
+    this.cursor = cursor;
+  }
+
+  public resetJournal(cursor: bigint = 0n): void {
+    this.journal.clear();
+    this.cursor = cursor;
+  }
+
+  public setLeafState(leafIndex: bigint, state: "RESERVED" | "BURNED", reason?: string): void {
+    this.journal.set(leafIndex.toString(), {
+      leafIndex: leafIndex.toString(),
+      state,
+      timestamp: Date.now(),
+      reason,
+    });
+  }
+
   public routeMempool(verificationGas: number, isStaked: boolean): MempoolRouteDecision {
     if (verificationGas <= this.canonicalCap) {
       return {

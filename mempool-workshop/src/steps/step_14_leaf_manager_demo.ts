@@ -1,14 +1,16 @@
+
+
 import { privateKeyToAccount } from "viem/accounts";
 import { LeafManager } from "../sdk/LeafManager.js";
 import { loadConfig } from "../lib/config.js";
 import { buildWalletTx, signFrameTx } from "../lib/frameTx/build.js";
 import { accountNonce, sendFrameTx, waitForReceipt, explorerLink } from "../lib/frameTx/send.js";
 import { runStep } from "../lib/output.js";
-import { ensureParticipantKey, requireState } from "../lib/state.js";
+import { ensureParticipantKey, readState } from "../lib/state.js";
 
 runStep("step_14_leaf_manager_demo", async (ctx) => {
   const cfg = loadConfig();
-  const rawState = JSON.parse(await import("fs").then(fs => fs.readFileSync("C:\\Users\\toufi\\Desktop\\eth\\mempool-workshop\\.workshop-state.json", "utf-8")));
+  const rawState = readState();
   const wallet = (rawState.pqWallet || rawState.wallet || "0xe5c5A34833db3A90E30adCD98f2955E36496483B") as `0x${string}`;
   const ownerKey = ensureParticipantKey();
   const owner = privateKeyToAccount(ownerKey).address;

@@ -1,6 +1,9 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
+import Link from "next/link";
+import Navbar from "./components/Navbar";
+import Footer from "./components/Footer";
 import {
   ShieldCheck,
   Cpu,
@@ -18,562 +21,20 @@ import {
   GitBranch,
   BookOpen,
   Wallet,
-  LogOut,
   AlertCircle,
   RefreshCw,
-  X,
-  Radio,
-  Info,
-  HelpCircle,
   Zap,
-  Play,
   ArrowRight,
+  Flame,
+  RotateCcw,
 } from "lucide-react";
-
-interface EIP6963ProviderInfo {
-  uuid: string;
-  name: string;
-  icon: string;
-  rdns: string;
-}
-
-interface EIP6963ProviderDetail {
-  info: EIP6963ProviderInfo;
-  provider: any;
-}
+import { useWallet } from "./context/WalletContext";
+import { useMounted } from "./hooks/useMounted";
 
 export default function Home() {
-  // Web3 Wallet Connection State
-  const [walletAddress, setWalletAddress] = useState<string | null>(null);
-  const [walletBalance, setWalletBalance] = useState<string | null>(null);
-  const [chainId, setChainId] = useState<string | null>(null);
-  const [isConnecting, setIsConnecting] = useState<boolean>(false);
-  const [connectingWalletName, setConnectingWalletName] = useState<string | null>(null);
-  const [isWalletModalOpen, setIsWalletModalOpen] = useState<boolean>(false);
-  const [walletError, setWalletError] = useState<string | null>(null);
-  const [activeProvider, setActiveProvider] = useState<any>(null);
-  const [discoveredWallets, setDiscoveredWallets] = useState<EIP6963ProviderDetail[]>([]);
-  const [isStakingTx, setIsStakingTx] = useState<boolean>(false);
-  const [txSuccessHash, setTxSuccessHash] = useState<string | null>(null);
-  const [isDemoAccount, setIsDemoAccount] = useState<boolean>(false);
-  const [isClaimingFaucet, setIsClaimingFaucet] = useState<boolean>(false);
-  const [faucetStatus, setFaucetStatus] = useState<string | null>(null);
-
-  // Staking & Admission Experiment State
-  const [isStaked, setIsStaked] = useState<boolean>(true);
-  const [stakeBlockNumber, setStakeBlockNumber] = useState<number | null>(1321233);
-  const [stakeTimestamp, setStakeTimestamp] = useState<string | null>("Just now");
-
-  // Canonical Pool test state
-  const [isTestingCanonical, setIsTestingCanonical] = useState<boolean>(false);
-  const [canonicalResult, setCanonicalResult] = useState<{ accepted: boolean; message: string; timestamp?: string } | null>(null);
-
-  // Unstaked Alt-Mempool test state (Door 2)
-  const [isTestingAltUnstaked, setIsTestingAltUnstaked] = useState<boolean>(false);
-  const [altUnstakedResult, setAltUnstakedResult] = useState<{ accepted: boolean; message: string; timestamp?: string } | null>(null);
-
-  // Alt-Mempool test state (Door 3)
-  const [isTestingAltMempool, setIsTestingAltMempool] = useState<boolean>(false);
-  const [altMempoolResult, setAltMempoolResult] = useState<{ accepted: boolean; txHash?: string; blockNumber?: number; gasUsed?: number; message: string; timestamp?: string } | null>(null);
-
-  // Simulator State
-  const [chains, setChains] = useState<number>(15);
-  const [iterations, setIterations] = useState<number>(20);
+  const isMounted = useMounted();
+  const { walletAddress, setIsWalletModalOpen } = useWallet();
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
-
-  // Helpers to resolve specific wallet providers (Phantom, MetaMask, Coinbase, Rabby, Injected)
-  const getPhantomProvider = () => {
-    if (typeof window === "undefined") return null;
-    const w = window as any;
-    if (w.phantom?.ethereum) return w.phantom.ethereum;
-    if (w.ethereum?.providers?.length) {
-      const p = w.ethereum.providers.find((prov: any) => prov.isPhantom);
-      if (p) return p;
-    }
-    if (w.ethereum?.isPhantom) return w.ethereum;
-    return null;
-  };
-
-  const getMetaMaskProvider = () => {
-    if (typeof window === "undefined") return null;
-    const w = window as any;
-    if (w.ethereum?.providers?.length) {
-      const mm = w.ethereum.providers.find(
-        (p: any) => p.isMetaMask && !p.isPhantom && !p.isCoinbaseWallet
-      );
-      if (mm) return mm;
-    }
-    if (w.ethereum?.isMetaMask && !w.ethereum?.isPhantom && !w.ethereum?.isCoinbaseWallet) {
-      return w.ethereum;
-    }
-    return null;
-  };
-
-  const getCoinbaseProvider = () => {
-    if (typeof window === "undefined") return null;
-    const w = window as any;
-    if (w.coinbaseWalletExtension) return w.coinbaseWalletExtension;
-    if (w.ethereum?.providers?.length) {
-      const cb = w.ethereum.providers.find((p: any) => p.isCoinbaseWallet);
-      if (cb) return cb;
-    }
-    if (w.ethereum?.isCoinbaseWallet) return w.ethereum;
-    return null;
-  };
-
-  const getRabbyProvider = () => {
-    if (typeof window === "undefined") return null;
-    const w = window as any;
-    if (w.rabby) return w.rabby;
-    if (w.ethereum?.providers?.length) {
-      const r = w.ethereum.providers.find((p: any) => p.isRabby);
-      if (r) return r;
-    }
-    if (w.ethereum?.isRabby) return w.ethereum;
-    return null;
-  };
-
-  const getAnyEthereumProvider = () => {
-    if (typeof window === "undefined") return null;
-    const w = window as any;
-    return (
-      getPhantomProvider() ||
-      getMetaMaskProvider() ||
-      getCoinbaseProvider() ||
-      getRabbyProvider() ||
-      w.ethereum ||
-      null
-    );
-  };
-
-  // Modern EIP-6963 Dynamic Wallet Discovery (Announce & Request Providers)
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    const handleAnnounce = (event: any) => {
-      if (!event.detail || !event.detail.info) return;
-      setDiscoveredWallets((prev) => {
-        if (
-          prev.some(
-            (w) =>
-              w.info.uuid === event.detail.info.uuid ||
-              w.info.name.toLowerCase() === event.detail.info.name.toLowerCase()
-          )
-        ) {
-          return prev;
-        }
-        return [...prev, event.detail];
-      });
-    };
-
-    window.addEventListener("eip6963:announceProvider", handleAnnounce);
-    window.dispatchEvent(new Event("eip6963:requestProvider"));
-
-    return () => {
-      window.removeEventListener("eip6963:announceProvider", handleAnnounce);
-    };
-  }, []);
-
-  // Check if wallet was explicitly connected in this session (respecting explicit user disconnect)
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (sessionStorage.getItem("qframe_user_connected") !== "true") {
-      return;
-    }
-    const eth = getAnyEthereumProvider();
-    if (eth) {
-      eth
-        .request({ method: "eth_accounts" })
-        .then((accounts: string[]) => {
-          if (sessionStorage.getItem("qframe_user_connected") !== "true") {
-            return;
-          }
-          if (accounts && accounts.length > 0) {
-            setWalletAddress(accounts[0]);
-            setActiveProvider(eth);
-            eth
-              .request({ method: "eth_chainId" })
-              .then((cid: string) => setChainId(cid))
-              .catch(() => {});
-            eth
-              .request({ method: "eth_getBalance", params: [accounts[0], "latest"] })
-              .then((bal: string) => {
-                const ethVal = (Number(BigInt(bal)) / 1e18).toFixed(4);
-                setWalletBalance(ethVal);
-              })
-              .catch(() => {});
-          }
-        })
-        .catch(() => {});
-    }
-  }, []);
-
-  const connectWithProvider = async (provider: any, label: string) => {
-    if (!provider) {
-      setWalletError(
-        `No ${label} extension detected in this browser. Please install ${label} or choose another option below.`
-      );
-      return;
-    }
-
-    try {
-      setIsConnecting(true);
-      setConnectingWalletName(label);
-      setWalletError(null);
-
-      // 15-second timeout so it never hangs indefinitely
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(
-          () =>
-            reject(
-              new Error(
-                `Approval pending in ${label}: please click the ${label} icon in your browser toolbar to approve the connection.`
-              )
-            ),
-          15000
-        )
-      );
-
-      const requestPromise = provider.request({ method: "eth_requestAccounts" });
-      const accounts = (await Promise.race([requestPromise, timeoutPromise])) as string[];
-
-      if (accounts && accounts.length > 0) {
-        if (typeof window !== "undefined") {
-          sessionStorage.setItem("qframe_user_connected", "true");
-          localStorage.removeItem("qframe_disconnected");
-        }
-        const address = accounts[0];
-        setWalletAddress(address);
-        setActiveProvider(provider);
-        setIsDemoAccount(false);
-        setIsWalletModalOpen(false);
-
-        try {
-          const currentChainId = await provider.request({ method: "eth_chainId" });
-          setChainId(currentChainId);
-        } catch {}
-
-        try {
-          const balanceHex = await provider.request({
-            method: "eth_getBalance",
-            params: [address, "latest"],
-          });
-          const balanceWei = BigInt(balanceHex);
-          const ethVal = (Number(balanceWei) / 1e18).toFixed(4);
-          setWalletBalance(ethVal);
-        } catch {
-          setWalletBalance("0.0000");
-        }
-
-        // Attach listeners for live network and account changes
-        if (provider.on) {
-          provider.on("accountsChanged", (newAccs: string[]) => {
-            if (typeof window !== "undefined" && sessionStorage.getItem("qframe_user_connected") !== "true") {
-              return;
-            }
-            if (!newAccs || newAccs.length === 0) {
-              disconnectWallet();
-            } else {
-              setWalletAddress(newAccs[0]);
-            }
-          });
-          provider.on("chainChanged", (newCid: string) => {
-            setChainId(newCid);
-          });
-        }
-      }
-    } catch (err: any) {
-      console.error(err);
-      setWalletError(
-        err.message ||
-          `Connection prompt pending. Please click the ${label} icon in your browser's toolbar to approve.`
-      );
-    } finally {
-      setIsConnecting(false);
-      setConnectingWalletName(null);
-    }
-  };
-
-  const connectSpecificWallet = async (
-    type: "metamask" | "phantom" | "coinbase" | "rabby" | "injected"
-  ) => {
-    if (type === "metamask") {
-      const p = getMetaMaskProvider() || getAnyEthereumProvider();
-      await connectWithProvider(p, "MetaMask");
-    } else if (type === "phantom") {
-      const p = getPhantomProvider();
-      await connectWithProvider(p, "Phantom");
-    } else if (type === "coinbase") {
-      const p = getCoinbaseProvider() || getAnyEthereumProvider();
-      await connectWithProvider(p, "Coinbase Wallet");
-    } else if (type === "rabby") {
-      const p = getRabbyProvider();
-      await connectWithProvider(p, "Rabby Wallet");
-    } else {
-      const p = getAnyEthereumProvider();
-      await connectWithProvider(p, "Browser Wallet");
-    }
-  };
-
-  const cancelConnecting = () => {
-    setIsConnecting(false);
-    setConnectingWalletName(null);
-    setWalletError(null);
-  };
-
-  const connectWallet = () => {
-    setIsWalletModalOpen(true);
-    setWalletError(null);
-  };
-
-  const disconnectWallet = async () => {
-    if (typeof window !== "undefined") {
-      sessionStorage.removeItem("qframe_user_connected");
-      localStorage.setItem("qframe_disconnected", "true");
-    }
-    const eth = activeProvider || getAnyEthereumProvider();
-    if (eth && eth.request) {
-      try {
-        await eth.request({
-          method: "wallet_revokePermissions",
-          params: [{ eth_accounts: {} }],
-        });
-      } catch {}
-    }
-    setWalletAddress(null);
-    setWalletBalance(null);
-    setChainId(null);
-    setActiveProvider(null);
-    setTxSuccessHash(null);
-    setIsDemoAccount(false);
-    setWalletError(null);
-  };
-
-  const switchToHegota = async () => {
-    const eth = activeProvider || getAnyEthereumProvider();
-    if (!eth) return;
-    try {
-      await eth.request({
-        method: "wallet_switchEthereumChain",
-        params: [{ chainId: "0x301824" }], // 3151908 in hex
-      });
-      setChainId("0x301824");
-    } catch (switchError: any) {
-      try {
-        await eth.request({
-          method: "wallet_addEthereumChain",
-          params: [
-            {
-              chainId: "0x301824",
-              chainName: "Hegotá Frame Devnet",
-              nativeCurrency: { name: "ETH", symbol: "ETH", decimals: 18 },
-              rpcUrls: ["https://rpc1.hegota.ethrex.xyz"],
-              blockExplorerUrls: ["https://dora.hegota.ethrex.xyz"],
-            },
-          ],
-        });
-        setChainId("0x301824");
-      } catch (addError) {
-        console.error(addError);
-      }
-    }
-  };
-
-  const claimFaucet = async (targetAddr?: string) => {
-    const addr = targetAddr || walletAddress;
-    if (!addr) {
-      setWalletError("Please connect your wallet first to receive faucet testnet funds.");
-      return;
-    }
-    try {
-      setIsClaimingFaucet(true);
-      setFaucetStatus(null);
-      const res = await fetch("https://faucet.hegota.ethrex.xyz/api/claim", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ address: addr }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setFaucetStatus(`1.0 ETH sent! Tx: ${data.txhash || "Success"}`);
-      } else {
-        setFaucetStatus(data.msg || "Faucet rate-limited (1 claim/hr/IP). Please check explorer.");
-      }
-    } catch (e: any) {
-      setFaucetStatus("Faucet claim request sent. If rate-limited, claim via faucet.hegota.ethrex.xyz.");
-    } finally {
-      setIsClaimingFaucet(false);
-    }
-  };
-
-  const handleSimulateStake = async () => {
-    setIsStakingTx(true);
-    setWalletError(null);
-    setTxSuccessHash(null);
-
-    const eth = activeProvider || getAnyEthereumProvider();
-    const balanceNum = parseFloat(walletBalance || "0");
-
-    // If active browser wallet is connected and has >= 0.012 ETH:
-    if (eth && walletAddress && balanceNum >= 0.012) {
-      try {
-        // addStake(86400) calldata on NaiveStakingRegistry
-        const addStakeCalldata = "0x0396cb600000000000000000000000000000000000000000000000000000000000015180";
-        const txHash = await eth.request({
-          method: "eth_sendTransaction",
-          params: [
-            {
-              from: walletAddress,
-              to: "0xd51c04d7a0b01124e84de152f4e56d9eecb22d2f", // NaiveStakingRegistry
-              value: "0x2aa1efb94e000", // 0.012 ETH
-              data: addStakeCalldata,
-            },
-          ],
-        });
-        setTxSuccessHash(txHash);
-        setIsStaked(true);
-        setStakeTimestamp("Just now");
-        setIsStakingTx(false);
-        return;
-      } catch (err: any) {
-        console.warn("User wallet sendTransaction rejected or failed, executing via devnet relayer:", err);
-      }
-    }
-
-    // Broadcast real on-chain transaction from funded devnet participant account (1.0 ETH pool)
-    try {
-      const res = await fetch("/api/transact", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "stake" }),
-      });
-      const data = await res.json();
-      if (data.ok && data.txHash) {
-        setTxSuccessHash(data.txHash);
-        setStakeBlockNumber(data.blockNumber);
-        setStakeTimestamp("Just now");
-        setIsStaked(true);
-      } else {
-        throw new Error(data.error || "Staking transaction failed");
-      }
-    } catch (err: any) {
-      console.error(err);
-      setWalletError(err.message || "Failed to broadcast staking transaction");
-    } finally {
-      setIsStakingTx(false);
-    }
-  };
-
-  const handleTestCanonical = async () => {
-    setIsTestingCanonical(true);
-    setCanonicalResult(null);
-    try {
-      const res = await fetch("/api/transact", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "test_canonical",
-          chains,
-          iterations,
-        }),
-      });
-      const data = await res.json();
-      setCanonicalResult({
-        accepted: data.admitted || false,
-        message: data.reason,
-        timestamp: new Date().toLocaleTimeString(),
-      });
-    } catch (err: any) {
-      setCanonicalResult({
-        accepted: false,
-        message: err.message || "Canonical simulation failed",
-        timestamp: new Date().toLocaleTimeString(),
-      });
-    } finally {
-      setIsTestingCanonical(false);
-    }
-  };
-
-  const handleTestAltUnstaked = async () => {
-    setIsTestingAltUnstaked(true);
-    setAltUnstakedResult(null);
-    try {
-      const res = await fetch("/api/transact", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "transact_pq",
-          chains,
-          iterations,
-          isStaked: false,
-        }),
-      });
-      const data = await res.json();
-      setAltUnstakedResult({
-        accepted: false,
-        message: data.reason || `UNSTAKED_REJECTED: Alt-mempool limits unstaked entities to 100,000 gas. Current verification requires ${calculatedGas.toLocaleString()} gas. Deposit 0.012 ETH stake to unlock the 2,000,000 gas allowance.`,
-        timestamp: new Date().toLocaleTimeString(),
-      });
-    } catch (err: any) {
-      setAltUnstakedResult({
-        accepted: false,
-        message: err.message || "Unstaked rejection simulation failed",
-        timestamp: new Date().toLocaleTimeString(),
-      });
-    } finally {
-      setIsTestingAltUnstaked(false);
-    }
-  };
-
-  const handleTestAltMempool = async () => {
-    setIsTestingAltMempool(true);
-    setAltMempoolResult(null);
-    try {
-      const res = await fetch("/api/transact", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "transact_pq",
-          chains,
-          iterations,
-          isStaked,
-        }),
-      });
-      const data = await res.json();
-      if (data.ok && data.admitted) {
-        setAltMempoolResult({
-          accepted: true,
-          txHash: data.txHash,
-          blockNumber: data.blockNumber,
-          gasUsed: data.gasUsed,
-          message: `ADMITTED & MINED: Verification budget ${data.calculatedGas?.toLocaleString()} gas fits within the 2,000,000 gas staked entity ceiling. Confirmed on Hegotá Devnet in Block #${data.blockNumber}.`,
-          timestamp: new Date().toLocaleTimeString(),
-        });
-      } else {
-        setAltMempoolResult({
-          accepted: false,
-          message: data.reason || "Transaction rejected by alt-mempool rules",
-          timestamp: new Date().toLocaleTimeString(),
-        });
-      }
-    } catch (err: any) {
-      setAltMempoolResult({
-        accepted: false,
-        message: err.message || "Alt-mempool broadcast failed",
-        timestamp: new Date().toLocaleTimeString(),
-      });
-    } finally {
-      setIsTestingAltMempool(false);
-    }
-  };
-
-  // Gas model calibrated from Foundry GasCurveTest.t.sol
-  // Base cost ~37,247 gas + chain overhead
-  const calculatedGas = Math.round(37247 + chains * iterations * 740);
-  const canonicalCap = 100000;
-  const altMempoolCap = 2000000;
-  const isCanonicalRejected = calculatedGas > canonicalCap;
-  const isAltMempoolAdmitted = calculatedGas <= altMempoolCap;
 
   const copyToClipboard = (text: string, key: string) => {
     navigator.clipboard.writeText(text);
@@ -581,392 +42,32 @@ export default function Home() {
     setTimeout(() => setCopiedKey(null), 2000);
   };
 
+  if (!isMounted) {
+    return (
+      <div className="min-h-screen bg-white text-[#1A1A1A] flex flex-col font-sans">
+        <div className="h-16 bg-white border-b border-[#E2E6E6]" />
+        <div className="flex-1 max-w-[1280px] mx-auto px-6 py-12 animate-pulse space-y-8 w-full">
+          <div className="h-8 bg-[#F2F2F2] w-48" />
+          <div className="h-12 bg-[#F2F2F2] w-96" />
+          <div className="h-64 bg-[#F2F2F2] w-full" />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-white text-[#1A1A1A] flex flex-col font-sans selection:bg-[#D82C2C] selection:text-white">
-      {/* ─────────────────────────────────────────────────────────────
-          1. HEADER / NAVIGATION (SWISS STRUCTURED - STRICT SINGLE LINE)
-      ───────────────────────────────────────────────────────────── */}
-      <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-md swiss-border-b">
-        <div className="max-w-[1400px] mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4 whitespace-nowrap">
-          {/* Logo */}
-          <div className="flex items-center flex-shrink-0">
-            <a href="#" className="flex items-center gap-2 group cursor-pointer flex-shrink-0 whitespace-nowrap">
-              <span className="w-3.5 h-3.5 bg-[#D82C2C] inline-block transition-transform duration-200 group-hover:scale-110 flex-shrink-0" />
-              <span className="font-bold tracking-tighter text-lg font-swiss-display text-[#1A1A1A] whitespace-nowrap">
-                Q&#8209;FRAME
-              </span>
-            </a>
-          </div>
-
-          {/* Navigation Links - Single Line Guaranteed */}
-          <nav className="hidden lg:flex items-center gap-5 xl:gap-7 text-xs xl:text-sm font-medium flex-shrink-0 whitespace-nowrap">
-            <a
-              href="#architecture"
-              className="text-[#1A1A1A] hover:text-[#D82C2C] transition-colors cursor-pointer whitespace-nowrap flex-shrink-0"
-            >
-              Architecture
-            </a>
-            <a
-              href="#evidence"
-              className="text-[#1A1A1A] hover:text-[#D82C2C] transition-colors cursor-pointer whitespace-nowrap flex-shrink-0"
-            >
-              On&#8209;Chain Proof
-            </a>
-            <a
-              href="#simulator"
-              className="text-[#1A1A1A] hover:text-[#D82C2C] transition-colors cursor-pointer whitespace-nowrap flex-shrink-0"
-            >
-              Gas Simulator
-            </a>
-            <a
-              href="#benchmarks"
-              className="text-[#1A1A1A] hover:text-[#D82C2C] transition-colors cursor-pointer whitespace-nowrap flex-shrink-0"
-            >
-              Benchmarks
-            </a>
-            <a
-              href="#pricing"
-              className="text-[#1A1A1A] hover:text-[#D82C2C] transition-colors cursor-pointer whitespace-nowrap flex-shrink-0"
-            >
-              Mempool Tiers
-            </a>
-          </nav>
-
-          {/* Action Buttons - Single Line Guaranteed */}
-          <div className="flex items-center gap-2.5 sm:gap-3 flex-shrink-0 whitespace-nowrap">
-            {/* Connect Wallet Button / Connected Pill */}
-            {walletAddress ? (
-              <div className="flex items-center gap-2 px-2.5 sm:px-3 py-1.5 bg-[#F2F2F2] border border-[#1A1A1A] text-xs font-swiss-mono flex-shrink-0 whitespace-nowrap">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block animate-pulse flex-shrink-0" />
-                <span className="font-bold text-[#1A1A1A]">
-                  {walletAddress.slice(0, 6)}...{walletAddress.slice(-4)}
-                </span>
-                {walletBalance && (
-                  <span className="text-[#A9B2B1] hidden md:inline">
-                    ({walletBalance} ETH)
-                  </span>
-                )}
-                {chainId !== "0x301824" && (
-                  <button
-                    onClick={switchToHegota}
-                    title="Switch wallet network to Hegotá Frame Devnet (3151908)"
-                    className="ml-1 text-[10px] bg-[#D82C2C] text-white px-1.5 py-0.5 rounded-none font-bold hover:bg-[#b02222] transition-colors cursor-pointer"
-                  >
-                    Switch to Hegotá
-                  </button>
-                )}
-                <button
-                  onClick={disconnectWallet}
-                  title="Disconnect wallet"
-                  className="ml-1 text-[#A9B2B1] hover:text-[#D82C2C] transition-colors cursor-pointer"
-                >
-                  <LogOut className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            ) : (
-              <button
-                onClick={() => setIsWalletModalOpen(true)}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-swiss-mono border border-[#1A1A1A] text-[#1A1A1A] hover:bg-[#1A1A1A] hover:text-white transition-all cursor-pointer whitespace-nowrap flex-shrink-0 font-semibold"
-              >
-                <Wallet className="w-3.5 h-3.5 flex-shrink-0" />
-                <span>CONNECT WALLET</span>
-              </button>
-            )}
-
-            <a
-              href="#simulator"
-              className="btn-swiss-primary px-3.5 sm:px-4 py-2 text-xs font-semibold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer whitespace-nowrap flex-shrink-0"
-            >
-              <span className="whitespace-nowrap">Simulate</span>
-              <ArrowUpRight className="w-3.5 h-3.5 flex-shrink-0" />
-            </a>
-          </div>
-        </div>
-      </header>
-
-      {/* ─────────────────────────────────────────────────────────────
-          NETWORK STATUS BANNER (SEPOLIA / WRONG CHAIN DETECTOR)
-      ───────────────────────────────────────────────────────────── */}
-      {walletAddress && chainId && chainId !== "0x301824" && (
-        <div className="bg-[#1A1A1A] text-white border-b-2 border-[#D82C2C] px-4 py-3 text-xs font-swiss-mono">
-          <div className="max-w-[1400px] mx-auto flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
-            <div className="flex items-start md:items-center gap-2.5">
-              <AlertCircle className="w-4 h-4 text-[#D82C2C] flex-shrink-0 mt-0.5 md:mt-0" />
-              <span>
-                <strong className="text-white">
-                  Active Network: {chainId === "0xaa36a7" ? "Ethereum Sepolia (Chain 11155111)" : `Chain ${chainId}`}
-                </strong>{" "}
-                — You have Sepolia ETH, but EIP&#8209;8141 Frame Transactions (Opcode <code className="text-[#D82C2C] font-bold">0xAA</code>) 
-                only execute on the <strong>Hegotá Frame Devnet (Chain 3151908)</strong>. Sepolia does not have EIP-8141 opcodes!
-              </span>
-            </div>
-            <div className="flex items-center gap-2 flex-shrink-0">
-              <button
-                onClick={switchToHegota}
-                className="bg-[#D82C2C] hover:bg-[#b02222] text-white px-3 py-1 font-bold text-xs uppercase transition-colors cursor-pointer"
-              >
-                Switch to Hegotá (1-Click)
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ─────────────────────────────────────────────────────────────
-          CONNECT WALLET MODAL (SWISS MINIMALIST DIALOG)
-      ───────────────────────────────────────────────────────────── */}
-      {isWalletModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <div className="bg-white border-2 border-[#1A1A1A] w-full max-w-md shadow-2xl relative">
-            {/* Top Swiss Accent Bar */}
-            <div className="h-1.5 bg-[#D82C2C] w-full" />
-
-            {/* Modal Header */}
-            <div className="p-5 border-b border-[#1A1A1A] flex items-center justify-between">
-              <div>
-                <span className="text-[10px] font-swiss-mono uppercase tracking-widest text-[#A9B2B1]">
-                  Web3 Provider Selection
-                </span>
-                <h3 className="text-xl font-bold font-swiss-display text-[#1A1A1A] tracking-tight">
-                  Connect Wallet
-                </h3>
-              </div>
-              <button
-                onClick={() => {
-                  setIsWalletModalOpen(false);
-                  cancelConnecting();
-                }}
-                className="p-1 hover:bg-[#F2F2F2] border border-transparent hover:border-[#1A1A1A] transition-colors cursor-pointer"
-              >
-                <X className="w-5 h-5 text-[#1A1A1A]" />
-              </button>
-            </div>
-
-            {/* Modal Body */}
-            <div className="p-5 space-y-3">
-              {/* Connection Status / Waiting Notice */}
-              {isConnecting && (
-                <div className="p-3.5 bg-amber-50 border border-amber-300 text-amber-900 text-xs font-swiss-mono space-y-2">
-                  <div className="flex items-center gap-2 font-bold">
-                    <RefreshCw className="w-4 h-4 animate-spin text-[#D82C2C]" />
-                    <span>Connecting to {connectingWalletName}...</span>
-                  </div>
-                  <p className="text-[11px] leading-relaxed">
-                    If the popup did not appear, <strong>look for your wallet&apos;s icon in your browser&apos;s extension toolbar</strong> (top-right near the address bar) and click it to approve the connection.
-                  </p>
-                  <button
-                    onClick={cancelConnecting}
-                    className="text-xs text-[#D82C2C] underline font-bold cursor-pointer hover:text-[#b02222]"
-                  >
-                    Cancel request
-                  </button>
-                </div>
-              )}
-
-              {/* Error message */}
-              {walletError && (
-                <div className="p-3 bg-red-50 border border-red-300 text-[#D82C2C] text-xs font-swiss-mono leading-relaxed">
-                  {walletError}
-                </div>
-              )}
-
-              {/* Wallet Choices */}
-              <div className="grid grid-cols-1 gap-2 max-h-[380px] overflow-y-auto pr-1">
-                {/* 1. MetaMask */}
-                <button
-                  onClick={() => connectSpecificWallet("metamask")}
-                  disabled={isConnecting}
-                  className="w-full p-3 border border-[#1A1A1A] hover:border-[#D82C2C] hover:bg-[#F2F2F2] flex items-center justify-between text-left transition-colors cursor-pointer disabled:opacity-50 group"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-none bg-[#E2761B] flex items-center justify-center text-white font-bold text-xs flex-shrink-0 font-swiss-mono">
-                      MM
-                    </div>
-                    <div>
-                      <div className="font-bold text-xs font-swiss-mono text-[#1A1A1A] group-hover:text-[#D82C2C] flex items-center gap-2">
-                        <span>MetaMask</span>
-                        {typeof window !== "undefined" && getMetaMaskProvider() && (
-                          <span className="text-[9px] px-1 py-0.2 bg-emerald-100 text-emerald-800 font-bold border border-emerald-300">
-                            DETECTED
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-[10px] text-[#A9B2B1]">Injected Web3 Provider</div>
-                    </div>
-                  </div>
-                  <ArrowUpRight className="w-4 h-4 text-[#A9B2B1] group-hover:text-[#D82C2C]" />
-                </button>
-
-                {/* 2. Phantom */}
-                <button
-                  onClick={() => connectSpecificWallet("phantom")}
-                  disabled={isConnecting}
-                  className="w-full p-3 border border-[#1A1A1A] hover:border-[#D82C2C] hover:bg-[#F2F2F2] flex items-center justify-between text-left transition-colors cursor-pointer disabled:opacity-50 group"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-none bg-[#AB9FF2] flex items-center justify-center text-[#1A1A1A] font-bold text-xs flex-shrink-0 font-swiss-mono">
-                      PH
-                    </div>
-                    <div>
-                      <div className="font-bold text-xs font-swiss-mono text-[#1A1A1A] group-hover:text-[#D82C2C] flex items-center gap-2">
-                        <span>Phantom</span>
-                        {typeof window !== "undefined" && getPhantomProvider() && (
-                          <span className="text-[9px] px-1 py-0.2 bg-emerald-100 text-emerald-800 font-bold border border-emerald-300">
-                            DETECTED
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-[10px] text-[#A9B2B1]">Solana &amp; Ethereum EVM Extension</div>
-                    </div>
-                  </div>
-                  <ArrowUpRight className="w-4 h-4 text-[#A9B2B1] group-hover:text-[#D82C2C]" />
-                </button>
-
-                {/* 3. Coinbase Wallet */}
-                <button
-                  onClick={() => connectSpecificWallet("coinbase")}
-                  disabled={isConnecting}
-                  className="w-full p-3 border border-[#1A1A1A] hover:border-[#D82C2C] hover:bg-[#F2F2F2] flex items-center justify-between text-left transition-colors cursor-pointer disabled:opacity-50 group"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-none bg-[#0052FF] flex items-center justify-center text-white font-bold text-xs flex-shrink-0 font-swiss-mono">
-                      CB
-                    </div>
-                    <div>
-                      <div className="font-bold text-xs font-swiss-mono text-[#1A1A1A] group-hover:text-[#D82C2C] flex items-center gap-2">
-                        <span>Coinbase Wallet</span>
-                        {typeof window !== "undefined" && getCoinbaseProvider() && (
-                          <span className="text-[9px] px-1 py-0.2 bg-emerald-100 text-emerald-800 font-bold border border-emerald-300">
-                            DETECTED
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-[10px] text-[#A9B2B1]">Browser Extension / Mobile</div>
-                    </div>
-                  </div>
-                  <ArrowUpRight className="w-4 h-4 text-[#A9B2B1] group-hover:text-[#D82C2C]" />
-                </button>
-
-                {/* 4. Rabby Wallet */}
-                <button
-                  onClick={() => connectSpecificWallet("rabby")}
-                  disabled={isConnecting}
-                  className="w-full p-3 border border-[#1A1A1A] hover:border-[#D82C2C] hover:bg-[#F2F2F2] flex items-center justify-between text-left transition-colors cursor-pointer disabled:opacity-50 group"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-none bg-[#8697FF] flex items-center justify-center text-white font-bold text-xs flex-shrink-0 font-swiss-mono">
-                      RB
-                    </div>
-                    <div>
-                      <div className="font-bold text-xs font-swiss-mono text-[#1A1A1A] group-hover:text-[#D82C2C] flex items-center gap-2">
-                        <span>Rabby Wallet</span>
-                        {typeof window !== "undefined" && getRabbyProvider() && (
-                          <span className="text-[9px] px-1 py-0.2 bg-emerald-100 text-emerald-800 font-bold border border-emerald-300">
-                            DETECTED
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-[10px] text-[#A9B2B1]">DeFi Specialist Web3 Wallet</div>
-                    </div>
-                  </div>
-                  <ArrowUpRight className="w-4 h-4 text-[#A9B2B1] group-hover:text-[#D82C2C]" />
-                </button>
-
-                {/* 5. Dynamically Discovered EIP-6963 Wallets (e.g. OKX, Zerion, Trust, Rainbow, etc.) */}
-                {discoveredWallets
-                  .filter(
-                    (w) =>
-                      !["metamask", "phantom", "coinbase", "rabby"].some((n) =>
-                        w.info.name.toLowerCase().includes(n)
-                      )
-                  )
-                  .map((wallet) => (
-                    <button
-                      key={wallet.info.uuid}
-                      onClick={() => connectWithProvider(wallet.provider, wallet.info.name)}
-                      disabled={isConnecting}
-                      className="w-full p-3 border border-[#1A1A1A] hover:border-[#D82C2C] hover:bg-[#F2F2F2] flex items-center justify-between text-left transition-colors cursor-pointer disabled:opacity-50 group"
-                    >
-                      <div className="flex items-center gap-3">
-                        {wallet.info.icon ? (
-                          <img
-                            src={wallet.info.icon}
-                            alt={wallet.info.name}
-                            className="w-8 h-8 object-contain rounded-none flex-shrink-0"
-                          />
-                        ) : (
-                          <div className="w-8 h-8 bg-[#1A1A1A] text-white flex items-center justify-center font-bold text-xs flex-shrink-0 font-swiss-mono">
-                            W3
-                          </div>
-                        )}
-                        <div>
-                          <div className="font-bold text-xs font-swiss-mono text-[#1A1A1A] group-hover:text-[#D82C2C] flex items-center gap-2">
-                            <span>{wallet.info.name}</span>
-                            <span className="text-[9px] px-1 py-0.2 bg-emerald-100 text-emerald-800 font-bold border border-emerald-300">
-                              DETECTED
-                            </span>
-                          </div>
-                          <div className="text-[10px] text-[#A9B2B1]">EIP-6963 Discovered Provider</div>
-                        </div>
-                      </div>
-                      <ArrowUpRight className="w-4 h-4 text-[#A9B2B1] group-hover:text-[#D82C2C]" />
-                    </button>
-                  ))}
-
-                {/* 6. Default Browser Injected Wallet */}
-                <button
-                  onClick={() => connectSpecificWallet("injected")}
-                  disabled={isConnecting}
-                  className="w-full p-3 border border-[#1A1A1A] hover:border-[#D82C2C] hover:bg-[#F2F2F2] flex items-center justify-between text-left transition-colors cursor-pointer disabled:opacity-50 group"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-none bg-[#1A1A1A] flex items-center justify-center text-white font-bold text-xs flex-shrink-0">
-                      <Wallet className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <div className="font-bold text-xs font-swiss-mono text-[#1A1A1A] group-hover:text-[#D82C2C]">
-                        Default Browser Wallet
-                      </div>
-                      <div className="text-[10px] text-[#A9B2B1]">Brave, Opera, or active window.ethereum</div>
-                    </div>
-                  </div>
-                  <ArrowUpRight className="w-4 h-4 text-[#A9B2B1] group-hover:text-[#D82C2C]" />
-                </button>
-              </div>
-            </div>
-
-            {/* Modal Footer with Chain details */}
-            <div className="p-4 bg-[#F2F2F2] border-t border-[#1A1A1A] text-[10px] font-swiss-mono text-[#1A1A1A]/70 flex items-center justify-between">
-              <span>Devnet: Hegotá (ID 3151908)</span>
-              <a
-                href="https://faucet.hegota.ethrex.xyz"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-[#D82C2C] hover:underline flex items-center gap-1"
-              >
-                <span>Devnet Faucet</span>
-                <ExternalLink className="w-3 h-3" />
-              </a>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Universal Shared Navbar */}
+      <Navbar />
 
       <main className="flex-1">
         {/* ─────────────────────────────────────────────────────────────
-            2. HERO SECTION (ASYMMETRICAL 12-COL GRID)
+            1. HERO SECTION (ASYMMETRICAL 12-COL GRID)
         ───────────────────────────────────────────────────────────── */}
         <section className="relative swiss-border-b overflow-hidden bg-white">
           <div className="max-w-[1280px] mx-auto px-6 py-16 md:py-24 grid grid-cols-1 lg:grid-cols-12 gap-12 items-start">
-            
             {/* Left 7 Columns */}
             <div className="lg:col-span-7 space-y-8">
-              <div className="inline-flex items-center gap-2 px-2.5 py-1 bg-[#F2F2F2] border border-[#A9B2B1]/40 text-xs font-swiss-mono">
-                <span className="text-[#D82C2C] font-bold">SPEC 01</span>
-                <span className="text-[#A9B2B1]">/</span>
-                <span>ETHGLOBAL MUMBAI 2026 · ETHEREUM FOUNDATION TRACK</span>
-              </div>
-
               <h1 className="text-4xl sm:text-5xl md:text-6xl font-extrabold tracking-tight font-swiss-display text-[#1A1A1A] leading-[1.05]">
                 POST-QUANTUM <br />
                 <span className="text-[#D82C2C]">FRAME TRANSACTIONS</span> <br />
@@ -980,19 +81,25 @@ export default function Home() {
               </p>
 
               <div className="flex flex-wrap items-center gap-4 pt-2">
-                <a
-                  href="#simulator"
+                <Link
+                  href="/simulator"
                   className="btn-swiss-primary px-6 py-3.5 text-sm font-semibold tracking-wide flex items-center gap-2 cursor-pointer"
                 >
                   <span>Interactive Gas Simulator</span>
                   <Sliders className="w-4 h-4" />
-                </a>
-                <a
-                  href="#evidence"
+                </Link>
+                <Link
+                  href="/studio"
                   className="btn-swiss-secondary px-6 py-3.5 text-sm font-semibold tracking-wide flex items-center gap-2 cursor-pointer"
                 >
-                  <span>Inspect Live Deployment</span>
-                  <ExternalLink className="w-4 h-4" />
+                  <span>Launch SDK Studio</span>
+                  <ArrowRight className="w-4 h-4 text-[#D82C2C]" />
+                </Link>
+                <a
+                  href="#evidence"
+                  className="text-xs font-swiss-mono font-bold text-[#A9B2B1] hover:text-[#1A1A1A] transition-colors flex items-center gap-1"
+                >
+                  <span>Inspect On-Chain Proof &darr;</span>
                 </a>
               </div>
 
@@ -1062,12 +169,11 @@ export default function Home() {
                 +
               </div>
             </div>
-
           </div>
         </section>
 
         {/* ─────────────────────────────────────────────────────────────
-            3. LIVE ON-CHAIN DEPLOYMENT BLOCK (VERIFIED EVIDENCE)
+            2. LIVE ON-CHAIN DEPLOYMENT BLOCK (VERIFIED EVIDENCE)
         ───────────────────────────────────────────────────────────── */}
         <section id="evidence" className="py-12 bg-[#F2F2F2] swiss-border-b">
           <div className="max-w-[1280px] mx-auto px-6">
@@ -1080,33 +186,34 @@ export default function Home() {
                   Live Contract Deployment Evidence
                 </h2>
               </div>
-              <div className="inline-flex items-center gap-2 px-3 py-1 bg-white border border-[#A9B2B1]/40 text-xs font-swiss-mono">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
-                <span>BLOCK #1317596 · STATUS: 0x1 MINED</span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-swiss-mono px-2.5 py-1 bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold">
+                  BLOCK #1317596 &middot; STATUS: 0x1 MINED
+                </span>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Contract Address Card */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Account Address Card */}
               <div className="bg-white p-5 swiss-border shadow-sm flex flex-col justify-between">
                 <div className="flex items-center justify-between text-xs font-swiss-mono text-[#A9B2B1] mb-2">
                   <span>PQBenchmarkAccount Contract</span>
-                  <span className="px-2 py-0.5 bg-[#F2F2F2] text-[#1A1A1A] font-semibold">Solidity 0.8.24</span>
+                  <span>Solidity 0.8.24</span>
                 </div>
                 <div className="font-swiss-mono text-sm sm:text-base font-bold text-[#1A1A1A] break-all my-2">
                   0xe5c5A34833db3A90E30adCD98f2955E36496483B
                 </div>
-                <div className="flex flex-wrap items-center gap-3 pt-2 text-xs font-swiss-mono">
+                <div className="flex items-center gap-3 pt-2 text-xs font-swiss-mono">
                   <button
                     onClick={() =>
                       copyToClipboard(
                         "0xe5c5A34833db3A90E30adCD98f2955E36496483B",
-                        "contract"
+                        "account"
                       )
                     }
                     className="inline-flex items-center gap-1.5 px-3 py-1 bg-[#1A1A1A] text-white hover:bg-[#D82C2C] transition-colors cursor-pointer"
                   >
-                    {copiedKey === "contract" ? (
+                    {copiedKey === "account" ? (
                       <>
                         <Check className="w-3.5 h-3.5" />
                         <span>COPIED</span>
@@ -1122,10 +229,10 @@ export default function Home() {
                     href="https://dora.hegota.ethrex.xyz/address/0xe5c5A34833db3A90E30adCD98f2955E36496483B"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 px-3 py-1 bg-white border border-[#1A1A1A] text-[#1A1A1A] hover:bg-[#1A1A1A] hover:text-white transition-colors cursor-pointer font-bold"
+                    className="inline-flex items-center gap-1 px-3 py-1 bg-[#F2F2F2] border border-[#A9B2B1]/50 text-[#1A1A1A] hover:border-[#1A1A1A] transition-colors cursor-pointer"
                   >
                     <span>View on Dora Explorer</span>
-                    <ExternalLink className="w-3 h-3 text-[#D82C2C]" />
+                    <ExternalLink className="w-3 h-3" />
                   </a>
                   <span className="text-[#A9B2B1]">Gas Used: 7,264,101</span>
                 </div>
@@ -1168,30 +275,15 @@ export default function Home() {
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-1 px-3 py-1 bg-white border border-[#1A1A1A] text-[#1A1A1A] hover:bg-[#1A1A1A] hover:text-white transition-colors cursor-pointer font-bold"
                   >
-                    <span>View on Dora</span>
+                    <span>View on Dora Explorer</span>
                     <ExternalLink className="w-3 h-3 text-[#D82C2C]" />
-                  </a>
-                  <a
-                    href="https://explorer.altmempool.wtf/"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 px-3 py-1 bg-[#F2F2F2] border border-[#A9B2B1]/50 text-[#1A1A1A] hover:border-[#1A1A1A] transition-colors cursor-pointer"
-                  >
-                    <span>Alt-Mempool Explorer</span>
-                    <ExternalLink className="w-3 h-3" />
                   </a>
                 </div>
               </div>
             </div>
-          </div>
-        </section>
 
-        {/* ─────────────────────────────────────────────────────────────
-            2.5 JUDGE & REVIEWER EVALUATION GUIDE (ZERO-FRICTION ONBOARDING)
-        ───────────────────────────────────────────────────────────── */}
-        <section className="py-10 bg-white swiss-border-b">
-          <div className="max-w-[1280px] mx-auto px-6">
-            <div className="bg-[#1A1A1A] text-white p-6 md:p-8 swiss-border relative">
+            {/* 60-Second Onboarding Guide */}
+            <div className="mt-8 bg-[#1A1A1A] text-white p-6 md:p-8 swiss-border relative">
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-white/20 pb-5 mb-6">
                 <div>
                   <div className="text-xs font-swiss-mono text-[#D82C2C] uppercase font-bold tracking-wider flex items-center gap-2">
@@ -1204,7 +296,7 @@ export default function Home() {
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-swiss-mono px-3 py-1 bg-white/10 text-[#A9B2B1] border border-white/20">
-                    Target Bounty: EF Frame Mempool ($5,000)
+                    EIP-8141 &amp; ERC-8421
                   </span>
                 </div>
               </div>
@@ -1214,9 +306,9 @@ export default function Home() {
                 <div className="space-y-3 bg-white/5 p-4 border border-white/10 flex flex-col justify-between">
                   <div className="space-y-2">
                     <div className="text-[#D82C2C] font-bold text-sm">01 / CONNECT DEVNET WALLET</div>
-                    <p className="text-[#A9B2B1] leading-relaxed">
+                    <p className="text-[#A9B2B1] leading-relaxed font-sans text-xs">
                       Connect your MetaMask, Coinbase Wallet, or Rabby. Our 1-click network switcher automatically configures the 
-                      Hegotá Frame Devnet (<code className="text-white">Chain 3151908</code>) with native EIP-8141 opcode support.
+                      Hegot&aacute; Frame Devnet (<code className="text-white">Chain 3151908</code>) with native EIP-8141 opcode support.
                     </p>
                   </div>
                   <button
@@ -1224,47 +316,44 @@ export default function Home() {
                     className="w-full py-2 bg-[#D82C2C] hover:bg-[#b02222] text-white font-bold transition-colors cursor-pointer text-center mt-2 flex items-center justify-center gap-2"
                   >
                     <Wallet className="w-3.5 h-3.5" />
-                    <span>CONNECT WALLET</span>
+                    <span>{walletAddress ? "WALLET CONNECTED" : "CONNECT IN 1-CLICK"}</span>
                   </button>
                 </div>
 
                 {/* Step 2 */}
                 <div className="space-y-3 bg-white/5 p-4 border border-white/10 flex flex-col justify-between">
                   <div className="space-y-2">
-                    <div className="text-[#D82C2C] font-bold text-sm">02 / TESTING WITH YOUR WALLET</div>
-                    <p className="text-[#A9B2B1] leading-relaxed">
-                      Connect Coinbase Wallet or MetaMask. If your wallet is on Sepolia, our 
-                      1-click network switcher will automatically configure the Hegotá Devnet (<code className="text-white">Chain 3151908</code>) 
-                      and add the Ethrex RPC (<code className="text-white">rpc1.hegota.ethrex.xyz</code>).
+                    <div className="text-[#D82C2C] font-bold text-sm">02 / SIMULATE GAS CEILINGS</div>
+                    <p className="text-[#A9B2B1] leading-relaxed font-sans text-xs">
+                      Open the interactive Gas Simulator. Drag the slider to 259,247 gas (NIST SLH-DSA). 
+                      Watch how the canonical mempool drops it, and how depositing 0.012 ETH stake admits it.
                     </p>
                   </div>
-                  <div className="pt-2 border-t border-white/10">
-                    <span className="text-[10px] text-white/60">Official Hegotá Faucet (1.0 ETH):</span>
-                    <a
-                      href="https://faucet.hegota.ethrex.xyz"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="block text-[#D82C2C] hover:underline truncate mt-0.5"
-                    >
-                      faucet.hegota.ethrex.xyz &rarr;
-                    </a>
-                  </div>
+                  <Link
+                    href="/simulator"
+                    className="w-full py-2 bg-white text-[#1A1A1A] hover:bg-[#F2F2F2] font-bold transition-colors text-center mt-2 flex items-center justify-center gap-2"
+                  >
+                    <Sliders className="w-3.5 h-3.5" />
+                    <span>OPEN GAS SIMULATOR &rarr;</span>
+                  </Link>
                 </div>
 
                 {/* Step 3 */}
                 <div className="space-y-3 bg-white/5 p-4 border border-white/10 flex flex-col justify-between">
                   <div className="space-y-2">
-                    <div className="text-[#D82C2C] font-bold text-sm">03 / WHY NOT SEPOLIA ETH?</div>
-                    <p className="text-[#A9B2B1] leading-relaxed">
-                      Standard Sepolia EVM runs Cancun/Prague without EIP-8141 opcodes. Calling opcode 
-                      <code className="text-[#D82C2C]"> 0xAA (APPROVE)</code> on Sepolia throws <code className="text-white">INVALID OPCODE</code>. 
-                      The Hegotá devnet runs <strong>Ethrex</strong>, the first client implementing EIP-8141 frame transactions natively.
+                    <div className="text-[#D82C2C] font-bold text-sm">03 / TEST LEAFMANAGER SDK</div>
+                    <p className="text-[#A9B2B1] leading-relaxed font-sans text-xs">
+                      Open the LeafManager Studio. Allocate parallel leaf channels, execute safe key-burning fee bumps, 
+                      and inspect live EIP-8250 storage slots directly from your connected wallet.
                     </p>
                   </div>
-                  <div className="pt-2 border-t border-white/10">
-                    <span className="text-[10px] text-white/60">Live Deployed Contract:</span>
-                    <div className="text-white font-bold truncate mt-0.5">0xe5c5...483B (Mined)</div>
-                  </div>
+                  <Link
+                    href="/studio"
+                    className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition-colors text-center mt-2 flex items-center justify-center gap-2"
+                  >
+                    <Zap className="w-3.5 h-3.5" />
+                    <span>OPEN SDK STUDIO &rarr;</span>
+                  </Link>
                 </div>
               </div>
             </div>
@@ -1272,539 +361,133 @@ export default function Home() {
         </section>
 
         {/* ─────────────────────────────────────────────────────────────
-            4. THE 3-STATE ADMISSION CONTRAST (THE CORE MECHANIC)
+            3. DEDICATED TOOL SUITE PORTALS: SIMULATOR & SDK STUDIO
         ───────────────────────────────────────────────────────────── */}
-        <section id="architecture" className="py-20 max-w-[1280px] mx-auto px-6">
-          <div className="mb-12">
-            <div className="text-xs font-swiss-mono text-[#D82C2C] uppercase font-bold tracking-wider">
-              03 / PROTOCOL VALIDATION CONTRAST
-            </div>
-            <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight font-swiss-display text-[#1A1A1A] mt-2">
-              The Three-State Mempool Admission Matrix
-            </h2>
-            <p className="text-base text-[#1A1A1A]/75 max-w-2xl mt-2">
-              Demonstrating the exact conditions under which quantum-resistant validation loops fail 
-              and succeed across canonical nodes versus staked ERC-8421 sidecars.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            
-            {/* State 1 */}
-            <div className="bg-white p-6 swiss-border relative flex flex-col justify-between">
-              <div>
-                <div className="flex items-center justify-between pb-3 swiss-border-b text-xs font-swiss-mono">
-                  <span className="text-[#A9B2B1]">SHOT 01</span>
-                  <span className="text-[#D82C2C] font-bold">REJECTED</span>
-                </div>
-                <div className="mt-4 flex items-center gap-2">
-                  <XCircle className="w-5 h-5 text-[#D82C2C]" />
-                  <h3 className="font-bold text-lg font-swiss-display">Canonical Node</h3>
-                </div>
-                <p className="text-sm text-[#1A1A1A]/70 mt-3 leading-relaxed">
-                  Sent directly to canonical Ethrex node without alternative mempool routing. 
-                  Validation gas reaches <strong>259,247 gas</strong>. The node enforces the 
-                  100,000 gas ceiling and immediately drops the transaction.
-                </p>
-              </div>
-
-              <div className="mt-6 pt-4 swiss-border-t font-swiss-mono text-xs space-y-1 bg-[#F2F2F2] p-3">
-                <div className="text-[#A9B2B1] text-[10px]">NODE REASON</div>
-                <div className="text-[#D82C2C] font-semibold break-all">
-                  validation frame gas limit exceeded: 259247 &gt; 100000
-                </div>
-              </div>
-            </div>
-
-            {/* State 2 */}
-            <div className="bg-white p-6 swiss-border relative flex flex-col justify-between">
-              <div>
-                <div className="flex items-center justify-between pb-3 swiss-border-b text-xs font-swiss-mono">
-                  <span className="text-[#A9B2B1]">SHOT 02</span>
-                  <span className="text-[#D82C2C] font-bold">REJECTED</span>
-                </div>
-                <div className="mt-4 flex items-center gap-2">
-                  <XCircle className="w-5 h-5 text-[#D82C2C]" />
-                  <h3 className="font-bold text-lg font-swiss-display">Unstaked Alt Mempool</h3>
-                </div>
-                <p className="text-sm text-[#1A1A1A]/70 mt-3 leading-relaxed">
-                  Sent to the Skandha alt-mempool gateway while the sender address holds zero stake in the 
-                  <code className="text-xs bg-[#F2F2F2] px-1 py-0.5">NaiveStakingRegistry</code>. 
-                  The sidecar restricts unstaked participants to standard limits.
-                </p>
-              </div>
-
-              <div className="mt-6 pt-4 swiss-border-t font-swiss-mono text-xs space-y-1 bg-[#F2F2F2] p-3">
-                <div className="text-[#A9B2B1] text-[10px]">SIDECAR REASON</div>
-                <div className="text-[#D82C2C] font-semibold break-all">
-                  entity unstaked: quota 100000 gas (stake min 0.01 ETH)
-                </div>
-              </div>
-            </div>
-
-            {/* State 3 */}
-            <div className="bg-[#1A1A1A] text-white p-6 border-2 border-[#1A1A1A] relative flex flex-col justify-between">
-              <div>
-                <div className="flex items-center justify-between pb-3 border-b border-white/20 text-xs font-swiss-mono">
-                  <span className="text-white/60">SHOT 03</span>
-                  <span className="text-emerald-400 font-bold">ADMITTED & MINED</span>
-                </div>
-                <div className="mt-4 flex items-center gap-2">
-                  <CheckCircle2 className="w-5 h-5 text-emerald-400" />
-                  <h3 className="font-bold text-lg font-swiss-display text-white">Staked Alt Mempool</h3>
-                </div>
-                <p className="text-sm text-white/80 mt-3 leading-relaxed">
-                  Sender deposits 0.012 ETH stake into <code className="text-xs bg-white/10 px-1 py-0.5">NaiveStakingRegistry</code>. 
-                  The sidecar unlocks the <strong>2,000,000 gas</strong> allowance. The heavy post-quantum 
-                  validation succeeds and gets included in the next block.
-                </p>
-              </div>
-
-              <div className="mt-6 pt-4 border-t border-white/20 font-swiss-mono text-xs space-y-1 bg-white/5 p-3">
-                <div className="text-white/60 text-[10px]">STATUS</div>
-                <div className="text-emerald-400 font-semibold">
-                  Admitted to mempool · Bundled · Status: 0x1 Mined
-                </div>
-              </div>
-            </div>
-
-          </div>
-        </section>
-
-        {/* ─────────────────────────────────────────────────────────────
-            3.5 ARCHITECTURAL CONTRIBUTION: KEYED NONCES (EIP-8250)
-        ───────────────────────────────────────────────────────────── */}
-        <section className="py-16 bg-white swiss-border-t">
+        <section className="py-20 bg-white swiss-border-b">
           <div className="max-w-[1280px] mx-auto px-6">
-            <div className="mb-10">
-              <div className="text-xs font-swiss-mono text-[#D82C2C] uppercase font-bold tracking-wider flex items-center gap-2">
-                <span className="w-2 h-2 bg-[#D82C2C] inline-block" />
-                <span>03.5 / CORE ARCHITECTURAL DIFFERENTIATOR</span>
-              </div>
-              <h2 className="text-3xl font-extrabold tracking-tight font-swiss-display text-[#1A1A1A] mt-2">
-                Keyed Nonces for Post-Quantum One-Time Signatures (EIP-8250)
-              </h2>
-              <p className="text-base text-[#1A1A1A]/75 max-w-3xl mt-2 leading-relaxed">
-                Hash-based post-quantum schemes (WOTS+, SPHINCS+) use <strong>One-Time Signature (OTS)</strong> keys that must never sign twice. 
-                Q-Frame maps each OTS leaf index directly to an <strong>EIP-8250 2D Nonce Key</strong> (<code>nonceKey = leafIndex</code>) to enable 
-                parallel mempool channels and protocol-enforced leaf retirement upon block inclusion.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-stretch font-swiss-mono text-xs">
-              {/* Failure Mode Card */}
-              <div className="p-6 bg-red-50/60 border-2 border-red-200 flex flex-col justify-between">
-                <div>
-                  <div className="flex items-center justify-between pb-3 border-b border-red-200">
-                    <span className="text-red-900 font-bold uppercase">The One-Time Signature Constraint</span>
-                    <span className="bg-[#D82C2C] text-white text-[10px] px-1.5 py-0.5 font-bold uppercase">Linear Nonce Risk</span>
-                  </div>
-                  <div className="mt-4 space-y-3 text-[#1A1A1A]">
-                    <div className="p-3 bg-white border border-red-200 font-mono text-[11px]">
-                      [Tx 1: Nonce 42] &rarr; Signed with Leaf #7 (Pending in Mempool)
-                    </div>
-                    <div className="text-center text-red-600 font-bold text-xs">&darr; Queue serialization under linear 1D nonces &darr;</div>
-                    <div className="p-3 bg-white border border-red-300 font-mono text-[11px] text-[#D82C2C]">
-                      [Tx 2: Nonce 42] &rarr; If re-signed with Leaf #7 at higher maxFeePerGas
-                    </div>
-                    <p className="text-red-950 text-xs leading-relaxed pt-2">
-                      <strong>Signature Forgery Risk:</strong> Revealing two distinct signatures under the same OTS leaf allows 
-                      adversaries to compute chain intersections and forge valid signatures for other messages.
-                    </p>
-                  </div>
-                </div>
-                <div className="mt-4 pt-3 border-t border-red-200 text-[11px] text-red-700">
-                  Standard linear nonces serialize all transactions into a single queue without key channel separation.
-                </div>
-              </div>
-
-              {/* Solution Card */}
-              <div className="p-6 bg-[#1A1A1A] text-white swiss-border flex flex-col justify-between">
-                <div>
-                  <div className="flex items-center justify-between pb-3 border-b border-white/20">
-                    <span className="text-[#D82C2C] font-bold uppercase">The EIP-8250 Keyed Nonce Architecture</span>
-                    <span className="bg-emerald-500 text-[#1A1A1A] text-[10px] px-1.5 py-0.5 font-bold uppercase">Parallel Channels</span>
-                  </div>
-                  <div className="mt-4 space-y-3">
-                    <div className="p-3 bg-white/10 border border-white/20 font-mono text-[11px]">
-                      Channel (Key #7, Seq 0) &rarr; One-Time Sign &amp; Mine (Leaf #7 retired, Seq &rarr; 1)
-                    </div>
-                    <div className="text-center text-[#D82C2C] font-bold text-xs">&darr; Concurrent Independent Channels (nonceKey = leafIndex) &darr;</div>
-                    <div className="p-3 bg-white/10 border border-emerald-500/50 font-mono text-[11px] text-emerald-400">
-                      Channel (Key #8, Seq 0) &rarr; Concurrently pending in mempool without queue blocking
-                    </div>
-                    <p className="text-[#A9B2B1] text-xs leading-relaxed pt-2">
-                      <strong>Protocol Nullifier:</strong> Hegot&aacute;&apos;s predeploy <code className="text-white">NONCE_MANAGER</code> (<code className="text-white">0x...8250</code>) 
-                      permanently retires the leaf upon inclusion. (Note: In-place fee-bumping for one-time keys remains an active open research challenge).
-                    </p>
-                  </div>
-                </div>
-                <div className="mt-4 pt-3 border-t border-white/20 flex items-center justify-between text-[11px]">
-                  <span className="text-emerald-400 font-bold">Verified in step_12_tx_keyed_nonces</span>
-                  <span className="text-white/60">Ethrex Native 2D Nonce</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* ─────────────────────────────────────────────────────────────
-            5. INTERACTIVE GAS & ADMISSION SIMULATOR
-        ───────────────────────────────────────────────────────────── */}
-        <section id="simulator" className="py-20 bg-[#F2F2F2] swiss-border-t swiss-border-b">
-          <div className="max-w-[1280px] mx-auto px-6">
-            <div className="mb-10">
+            <div className="mb-12">
               <div className="text-xs font-swiss-mono text-[#D82C2C] uppercase font-bold tracking-wider">
-                04 / REAL-TIME MATHEMATICAL SIMULATOR
+                03 / INTERACTIVE PROTOCOL TOOLS &amp; DEVELOPER SUITE
               </div>
-              <h2 className="text-3xl font-extrabold tracking-tight font-swiss-display text-[#1A1A1A] mt-1">
-                Post-Quantum Gas Curve & Admission Simulator
+              <h2 className="text-3xl md:text-4xl font-extrabold tracking-tight font-swiss-display text-[#1A1A1A] mt-1">
+                Explore the Protocol Tools &amp; Implementation
               </h2>
-              <p className="text-sm sm:text-base text-[#1A1A1A]/70 max-w-xl mt-1">
-                Adjust the hash-chain parameters to simulate cryptographic signature workloads 
-                and observe real-time admission decisions.
+              <p className="text-sm sm:text-base text-[#1A1A1A]/70 max-w-2xl mt-1">
+                Deep dive into real-time cryptographic gas physics or test the full stateful One-Time Signature (OTS) client SDK.
               </p>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-              
-              {/* Controls Column (7 cols) */}
-              <div className="lg:col-span-7 bg-white p-6 sm:p-8 swiss-border shadow-sm space-y-8">
-                
-                {/* Chains Control */}
-                <div className="space-y-3">
-                  <div className="flex justify-between items-center text-sm font-swiss-mono">
-                    <span className="font-semibold text-[#1A1A1A]">Hash Chains Count (W-OTS+):</span>
-                    <span className="px-2.5 py-0.5 bg-[#1A1A1A] text-white text-xs font-bold font-swiss-mono">
-                      {chains} Chains
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-stretch">
+              {/* Tool 1: Gas Simulator Portal */}
+              <div className="bg-[#F2F2F2] p-8 swiss-border flex flex-col justify-between shadow-sm hover:shadow-md transition-shadow">
+                <div className="space-y-5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-swiss-mono px-2.5 py-1 bg-[#1A1A1A] text-white font-bold uppercase">
+                      MATHEMATICAL TOOL
+                    </span>
+                    <span className="text-xs font-swiss-mono text-[#D82C2C] font-bold">
+                      NIST FIPS 205 (SLH-DSA)
                     </span>
                   </div>
-                  <input
-                    type="range"
-                    min="1"
-                    max="35"
-                    step="1"
-                    value={chains}
-                    onChange={(e) => setChains(Number(e.target.value))}
-                    className="w-full cursor-pointer h-2 bg-[#F2F2F2] rounded-none appearance-none"
-                  />
-                  <div className="flex justify-between text-[11px] font-swiss-mono text-[#A9B2B1]">
-                    <span>1 (Toy)</span>
-                    <span>15 (NIST FIPS 205)</span>
-                    <span>35 (Heavy PQ Tree)</span>
+
+                  <h3 className="text-2xl font-bold font-swiss-display text-[#1A1A1A]">
+                    Post-Quantum Gas Simulator
+                  </h3>
+
+                  <p className="text-xs sm:text-sm text-[#1A1A1A]/75 leading-relaxed font-sans">
+                    Dynamically sweep hash-chain parameters against native EIP-8141 execution frames.
+                    Visualize why NIST post-quantum verification requires <strong>259,247 gas</strong>, causing canonical mempools to drop it at the 100k wall, and see how ERC-8421 collateral unlocks up to <strong>2,000,000 gas</strong>.
+                  </p>
+
+                  <div className="p-4 bg-white font-swiss-mono text-xs space-y-2 swiss-border">
+                    <div className="flex justify-between items-center text-[#A9B2B1]">
+                      <span>CANONICAL CEILING:</span>
+                      <span className="text-[#1A1A1A] font-bold">100,000 GAS (Hard Wall)</span>
+                    </div>
+                    <div className="flex justify-between items-center text-[#A9B2B1]">
+                      <span>STAKED MEMPOOL CEILING:</span>
+                      <span className="text-emerald-700 font-bold">2,000,000 GAS (+1,900%)</span>
+                    </div>
+                    <div className="flex justify-between items-center text-[#A9B2B1]">
+                      <span>MINIMUM STAKE:</span>
+                      <span className="text-[#D82C2C] font-bold">0.012 ETH (86,400s delay)</span>
+                    </div>
                   </div>
                 </div>
 
-                {/* Iterations Control */}
-                <div className="space-y-3">
-                  <div className="flex justify-between items-center text-sm font-swiss-mono">
-                    <span className="font-semibold text-[#1A1A1A]">Iterations Per Chain:</span>
-                    <span className="px-2.5 py-0.5 bg-[#1A1A1A] text-white text-xs font-bold font-swiss-mono">
-                      {iterations} Iterations
+                <div className="mt-8 pt-4 border-t border-[#E2E6E6]">
+                  <Link
+                    href="/simulator"
+                    className="w-full py-3.5 bg-[#1A1A1A] hover:bg-[#D82C2C] text-white font-swiss-mono text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                  >
+                    <span>Launch Gas Simulator &rarr;</span>
+                  </Link>
+                </div>
+              </div>
+
+              {/* Tool 2: SDK Studio Portal */}
+              <div className="bg-[#F2F2F2] p-8 swiss-border flex flex-col justify-between shadow-sm hover:shadow-md transition-shadow">
+                <div className="space-y-5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-swiss-mono px-2.5 py-1 bg-[#D82C2C] text-white font-bold uppercase">
+                      CLIENT SDK SUITE
+                    </span>
+                    <span className="text-xs font-swiss-mono text-[#1A1A1A] font-bold">
+                      EIP-8250 KEYED NONCES
                     </span>
                   </div>
-                  <input
-                    type="range"
-                    min="5"
-                    max="75"
-                    step="1"
-                    value={iterations}
-                    onChange={(e) => setIterations(Number(e.target.value))}
-                    className="w-full cursor-pointer h-2 bg-[#F2F2F2] rounded-none appearance-none"
-                  />
-                  <div className="flex justify-between text-[11px] font-swiss-mono text-[#A9B2B1]">
-                    <span>5 Iterations</span>
-                    <span>20 (Calibrated Baseline)</span>
-                    <span>75 (2.0M Stress Limit)</span>
+
+                  <h3 className="text-2xl font-bold font-swiss-display text-[#1A1A1A]">
+                    LeafManager SDK Studio
+                  </h3>
+
+                  <p className="text-xs sm:text-sm text-[#1A1A1A]/75 leading-relaxed font-sans">
+                    The complete developer playground and integration guide for stateful One-Time Signature (OTS) keys.
+                    Explore the <strong>12-channel leaf matrix</strong>, live devnet storage slot inspection, write-ahead journals, safe key-burning fee bumps, and zero-state recovery.
+                  </p>
+
+                  <div className="p-4 bg-white font-swiss-mono text-xs space-y-2 swiss-border">
+                    <div className="flex justify-between items-center text-[#A9B2B1]">
+                      <span>KEY MANAGEMENT:</span>
+                      <span className="text-[#1A1A1A] font-bold">12 Parallel OTS Channels</span>
+                    </div>
+                    <div className="flex justify-between items-center text-[#A9B2B1]">
+                      <span>PREDEPLOY BINDING:</span>
+                      <span className="text-blue-700 font-bold">0x...8250 NonceManager</span>
+                    </div>
+                    <div className="flex justify-between items-center text-[#A9B2B1]">
+                      <span>CRASH RECOVERY:</span>
+                      <span className="text-emerald-700 font-bold">+16 Leaf Safety Gap</span>
+                    </div>
                   </div>
                 </div>
 
-                {/* Live Formula Callout */}
-                <div className="p-4 bg-[#F2F2F2] border-l-4 border-[#D82C2C] text-xs font-swiss-mono space-y-1">
-                  <div className="text-[#A9B2B1] font-semibold text-[10px]">CALIBRATED EQUATION (FROM FOUNDRY RUNNER)</div>
-                  <div className="text-[#1A1A1A] font-bold">
-                    Gas = 37,247 + ({chains} × {iterations} × 740) = {calculatedGas.toLocaleString()} Gas
-                  </div>
+                <div className="mt-8 pt-4 border-t border-[#E2E6E6]">
+                  <Link
+                    href="/studio"
+                    className="w-full py-3.5 bg-[#D82C2C] hover:bg-[#b02222] text-white font-swiss-mono text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                  >
+                    <span>Launch SDK Studio &amp; Dev Guide &rarr;</span>
+                  </Link>
                 </div>
-
               </div>
-
-              {/* Simulation Result Column (5 cols) */}
-              <div className="lg:col-span-5 bg-white p-6 sm:p-8 swiss-border shadow-sm space-y-6">
-                <div className="text-xs font-swiss-mono text-[#A9B2B1] uppercase pb-2 swiss-border-b flex justify-between">
-                  <span>SIMULATED ADMISSION REPORT</span>
-                  <span>OP: APPROVE</span>
-                </div>
-
-                <div>
-                  <div className="text-xs font-swiss-mono text-[#A9B2B1]">CALCULATED VERIFICATION GAS</div>
-                  <div className="text-4xl font-extrabold font-swiss-display text-[#1A1A1A] mt-1">
-                    {calculatedGas.toLocaleString()} <span className="text-sm font-swiss-mono text-[#A9B2B1]">GAS</span>
-                  </div>
-                </div>
-
-                {/* Door 1: Canonical Mempool */}
-                <div className="p-4 swiss-border space-y-2">
-                  <div className="flex items-center justify-between text-xs font-swiss-mono">
-                    <span className="font-bold text-[#1A1A1A]">DOOR 1: CANONICAL MEMPOOL</span>
-                    <span className="text-[10px] bg-red-100 text-[#D82C2C] px-1.5 py-0.5 font-bold">100k HARD CAP</span>
-                  </div>
-                  <div className="w-full bg-[#F2F2F2] h-1.5 overflow-hidden">
-                    <div
-                      className={`h-full ${isCanonicalRejected ? "bg-[#D82C2C]" : "bg-emerald-500"}`}
-                      style={{
-                        width: `${Math.min(100, (calculatedGas / canonicalCap) * 100)}%`,
-                      }}
-                    />
-                  </div>
-                  <div className="text-[11px] font-swiss-mono text-[#A9B2B1]">
-                    {isCanonicalRejected
-                      ? `Exceeds canonical DoS limit by ${(calculatedGas - canonicalCap).toLocaleString()} gas`
-                      : `Within 100,000 gas limit`}
-                  </div>
-
-                  <button
-                    onClick={handleTestCanonical}
-                    disabled={isTestingCanonical}
-                    className="w-full py-2 px-3 text-[11px] font-swiss-mono font-bold uppercase tracking-wider bg-white hover:bg-[#F9F9F9] text-[#1A1A1A] swiss-border flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
-                  >
-                    {isTestingCanonical ? (
-                      <>
-                        <RefreshCw className="w-3 h-3 animate-spin text-[#D82C2C]" />
-                        <span>SIMULATING CANONICAL GOSSIP...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Play className="w-3 h-3 text-[#D82C2C]" />
-                        <span>1. TEST CANONICAL MEMPOOL (WATCH IT REJECT)</span>
-                      </>
-                    )}
-                  </button>
-
-                  {canonicalResult && (
-                    <div className={`p-2.5 text-[11px] font-swiss-mono border ${canonicalResult.accepted ? "bg-emerald-50 text-emerald-800 border-emerald-300" : "bg-red-50 text-[#D82C2C] border-red-200"}`}>
-                      <div className="font-bold flex items-center justify-between pb-1">
-                        <span>{canonicalResult.accepted ? "STATUS: ACCEPTED" : "STATUS: REJECTED"}</span>
-                        <span className="text-[10px] text-[#A9B2B1]">{canonicalResult.timestamp}</span>
-                      </div>
-                      <div className="text-[10px] leading-relaxed">{canonicalResult.message}</div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Door 2: Unstaked Alt-Mempool */}
-                <div className="p-4 swiss-border space-y-2">
-                  <div className="flex items-center justify-between text-xs font-swiss-mono">
-                    <span className="font-bold text-[#1A1A1A]">DOOR 2: UNSTAKED ALT-MEMPOOL</span>
-                    <span className="text-[10px] bg-amber-100 text-amber-900 px-1.5 py-0.5 font-bold">0 ETH STAKE (100k CAP)</span>
-                  </div>
-                  <div className="text-[11px] font-swiss-mono text-[#A9B2B1]">
-                    The alternative mempool sidecar restricts unstaked participants to 100,000 gas to protect validators from uncompensated DoS.
-                  </div>
-
-                  <button
-                    onClick={handleTestAltUnstaked}
-                    disabled={isTestingAltUnstaked}
-                    className="w-full py-2 px-3 text-[11px] font-swiss-mono font-bold uppercase tracking-wider bg-white hover:bg-[#F9F9F9] text-[#1A1A1A] swiss-border flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
-                  >
-                    {isTestingAltUnstaked ? (
-                      <>
-                        <RefreshCw className="w-3 h-3 animate-spin text-amber-600" />
-                        <span>CHECKING UNSTAKED QUOTA...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Play className="w-3 h-3 text-amber-600" />
-                        <span>2. TEST UNSTAKED ALT-MEMPOOL (WATCH IT REJECT)</span>
-                      </>
-                    )}
-                  </button>
-
-                  {altUnstakedResult && (
-                    <div className="p-2.5 text-[11px] font-swiss-mono border bg-amber-50 text-amber-900 border-amber-300">
-                      <div className="font-bold flex items-center justify-between pb-1">
-                        <span>STATUS: REJECTED (QUOTA EXCEEDED)</span>
-                        <span className="text-[10px] text-amber-700">{altUnstakedResult.timestamp}</span>
-                      </div>
-                      <div className="text-[10px] leading-relaxed">{altUnstakedResult.message}</div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Door 3: Staked Alt-Mempool (The Winning Door) */}
-                <div className="p-5 bg-[#1A1A1A] text-white space-y-3">
-                  <div className="flex items-center justify-between text-xs font-swiss-mono">
-                    <span className="font-bold text-white">DOOR 3: STAKED ALT-MEMPOOL</span>
-                    <span className="text-[10px] bg-emerald-500 text-black px-1.5 py-0.5 font-bold">2,000,000 GAS CEILING</span>
-                  </div>
-
-                  <div className="w-full bg-white/20 h-1.5 overflow-hidden">
-                    <div
-                      className="h-full bg-emerald-400"
-                      style={{
-                        width: `${Math.min(100, (calculatedGas / altMempoolCap) * 100)}%`,
-                      }}
-                    />
-                  </div>
-                  <div className="text-[11px] font-swiss-mono text-white/60">
-                    {((calculatedGas / altMempoolCap) * 100).toFixed(1)}% of expanded 2,000,000 gas allowance utilized
-                  </div>
-
-                  {/* Collateral State & On-Chain Stake Action */}
-                  <div className="p-3 bg-white/10 swiss-border flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs font-swiss-mono">
-                    <div>
-                      <div className="text-[10px] text-white/60">COLLATERAL STATUS</div>
-                      <div className={`font-bold ${isStaked ? "text-emerald-400" : "text-amber-400"}`}>
-                        {isStaked ? "✓ ACTIVE STAKE (0.012 ETH IN REGISTRY)" : "⚠ UNSTAKED (0 ETH)"}
-                      </div>
-                    </div>
-
-                    <button
-                      onClick={handleSimulateStake}
-                      disabled={isStakingTx}
-                      className="btn-swiss-primary py-1.5 px-3 text-[11px] font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap"
-                    >
-                      {isStakingTx ? (
-                        <>
-                          <RefreshCw className="w-3 h-3 animate-spin" />
-                          <span>MINING STAKE TX...</span>
-                        </>
-                      ) : (
-                        <>
-                          <ShieldCheck className="w-3 h-3" />
-                          <span>{isStaked ? "ADD/RENEW 0.012 ETH STAKE" : "DEPOSIT 0.012 ETH STAKE"}</span>
-                        </>
-                      )}
-                    </button>
-                  </div>
-
-                  {txSuccessHash && (
-                    <div className="p-2.5 bg-emerald-950/80 border border-emerald-500/50 text-[10px] font-swiss-mono text-emerald-200 space-y-1">
-                      <div className="font-bold flex items-center justify-between text-emerald-400">
-                        <span>STAKE CONFIRMED ON-CHAIN</span>
-                        <span>Mined (0x1) • Block #{stakeBlockNumber || 1321401}</span>
-                      </div>
-                      <div className="break-all font-mono text-white/80">{txSuccessHash}</div>
-                      <a
-                        href={`https://dora.hegota.ethrex.xyz/tx/${txSuccessHash}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-emerald-400 hover:underline flex items-center gap-1 font-bold pt-0.5 inline-flex"
-                      >
-                        <span>View Stake on Dora Explorer (Just now)</span>
-                        <ExternalLink className="w-2.5 h-2.5" />
-                      </a>
-                    </div>
-                  )}
-
-                  {walletError && (
-                    <div className="p-2.5 bg-red-950/80 text-red-300 text-xs font-swiss-mono border border-red-500/50">
-                      {walletError}
-                    </div>
-                  )}
-
-                  {/* Transact on Staked Alt-Mempool */}
-                  <button
-                    onClick={handleTestAltMempool}
-                    disabled={isTestingAltMempool}
-                    className="w-full py-2.5 px-3 text-xs font-swiss-mono font-bold uppercase tracking-wider bg-emerald-500 hover:bg-emerald-400 text-black flex items-center justify-center gap-1.5 cursor-pointer transition-colors shadow-sm"
-                  >
-                    {isTestingAltMempool ? (
-                      <>
-                        <RefreshCw className="w-3.5 h-3.5 animate-spin text-black" />
-                        <span>BROADCASTING TO ALT-MEMPOOL & MINING...</span>
-                      </>
-                    ) : (
-                      <>
-                        <ArrowRight className="w-3.5 h-3.5 text-black" />
-                        <span>3. TRANSACT ON Q-FRAME ALT-MEMPOOL (2M ALLOWANCE)</span>
-                      </>
-                    )}
-                  </button>
-
-                  {altMempoolResult && (
-                    <div className={`p-2.5 text-[11px] font-swiss-mono ${altMempoolResult.accepted ? "bg-emerald-950/90 text-emerald-300 border border-emerald-500/50" : "bg-red-950/90 text-red-300 border border-red-500/50"}`}>
-                      <div className="font-bold flex items-center justify-between pb-1">
-                        <span>{altMempoolResult.accepted ? "DOOR 3 STATUS: ADMITTED & MINED" : "DOOR 3 STATUS: REJECTED"}</span>
-                        <span className="text-[10px] text-white/50">{altMempoolResult.timestamp}</span>
-                      </div>
-                      <div className="text-[10px] leading-relaxed">{altMempoolResult.message}</div>
-                      {altMempoolResult.txHash && (
-                        <div className="mt-2 pt-2 border-t border-emerald-500/30 space-y-1">
-                          <div className="text-[10px] text-white/80 font-bold">FRESH DEVNET RECEIPT (Block #{altMempoolResult.blockNumber}):</div>
-                          <div className="break-all font-mono text-[10px] text-emerald-200">{altMempoolResult.txHash}</div>
-                          <div className="flex items-center gap-3 pt-1">
-                            <a
-                              href={`https://dora.hegota.ethrex.xyz/tx/${altMempoolResult.txHash}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-emerald-400 hover:underline flex items-center gap-1 font-bold text-[10px]"
-                            >
-                              <span>View on Dora Explorer (Just now)</span>
-                              <ExternalLink className="w-2.5 h-2.5" />
-                            </a>
-                            <span className="text-white/40">·</span>
-                            <a
-                              href="https://explorer.altmempool.wtf/"
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-white hover:underline flex items-center gap-1 font-bold text-[10px]"
-                            >
-                              <span>Alt-Mempool Explorer</span>
-                              <ExternalLink className="w-2.5 h-2.5" />
-                            </a>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                {/* Devnet Utility Footer */}
-                <div className="pt-2 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs font-swiss-mono text-[#A9B2B1] swiss-border-t">
-                  <span>Need devnet funds?</span>
-                  <button
-                    onClick={() => claimFaucet()}
-                    disabled={isClaimingFaucet}
-                    className="btn-swiss-secondary py-1.5 px-3 text-[11px] font-swiss-mono flex items-center gap-1.5 cursor-pointer"
-                  >
-                    {isClaimingFaucet ? (
-                      <>
-                        <RefreshCw className="w-3 h-3 animate-spin" />
-                        <span>CLAIMING 1.0 ETH...</span>
-                      </>
-                    ) : (
-                      <>
-                        <ArrowUpRight className="w-3 h-3" />
-                        <span>CLAIM 1.0 DEVNET ETH</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-                {faucetStatus && (
-                  <div className="p-2 bg-blue-50 text-[#0033A0] text-xs font-swiss-mono border border-blue-200">
-                    {faucetStatus}
-                  </div>
-                )}
-              </div>
-
             </div>
           </div>
         </section>
 
         {/* ─────────────────────────────────────────────────────────────
-            6. GAS BENCHMARKS CALIBRATION TABLE
+            4. FOUNDRY TEST BENCHMARKS CALIBRATION TABLE
         ───────────────────────────────────────────────────────────── */}
         <section id="benchmarks" className="py-20 max-w-[1280px] mx-auto px-6">
           <div className="mb-10">
             <div className="text-xs font-swiss-mono text-[#D82C2C] uppercase font-bold tracking-wider">
-              05 / EMPIRICAL DATA
+              04 / EMPIRICAL DATA
             </div>
             <h2 className="text-3xl font-extrabold tracking-tight font-swiss-display text-[#1A1A1A] mt-1">
               Foundry Test Calibration Curves
             </h2>
             <p className="text-sm text-[#1A1A1A]/70 max-w-xl mt-1">
-              Direct telemetry from <code className="text-xs bg-[#F2F2F2] px-1 py-0.5">contracts/test/GasCurveTest.t.sol</code> passing 13 / 13 tests.
+              Direct telemetry from <code className="text-xs bg-[#F2F2F2] px-1 py-0.5 font-mono">contracts/test/GasCurveTest.t.sol</code> passing 13 / 13 tests.
             </p>
           </div>
 
@@ -1813,7 +496,7 @@ export default function Home() {
               <thead>
                 <tr className="bg-[#1A1A1A] text-white">
                   <th className="p-4 border-r border-white/20">CONFIG PROFILE</th>
-                  <th className="p-4 border-r border-white/20">CHAINS × ITERS</th>
+                  <th className="p-4 border-r border-white/20">CHAINS &times; ITERS</th>
                   <th className="p-4 border-r border-white/20">VERIFICATION GAS</th>
                   <th className="p-4 border-r border-white/20">CANONICAL (100K)</th>
                   <th className="p-4">STAKED ALT MEMPOOL (1M)</th>
@@ -1822,23 +505,23 @@ export default function Home() {
               <tbody className="divide-y divide-[#E2E6E6]">
                 <tr className="hover:bg-[#F2F2F2]/50 transition-colors">
                   <td className="p-4 font-bold border-r border-[#E2E6E6]">NIST Minimal Bound</td>
-                  <td className="p-4 border-r border-[#E2E6E6]">4 × 10</td>
+                  <td className="p-4 border-r border-[#E2E6E6]">4 &times; 10</td>
                   <td className="p-4 font-bold border-r border-[#E2E6E6]">66,847 Gas</td>
                   <td className="p-4 text-emerald-600 font-bold border-r border-[#E2E6E6]">Admitted</td>
                   <td className="p-4 text-emerald-600 font-bold">Admitted</td>
                 </tr>
                 <tr className="hover:bg-[#F2F2F2]/50 transition-colors">
                   <td className="p-4 font-bold border-r border-[#E2E6E6]">Threshold Cross</td>
-                  <td className="p-4 border-r border-[#E2E6E6]">8 × 15</td>
+                  <td className="p-4 border-r border-[#E2E6E6]">8 &times; 15</td>
                   <td className="p-4 font-bold border-r border-[#E2E6E6]">126,047 Gas</td>
                   <td className="p-4 text-[#D82C2C] font-bold border-r border-[#E2E6E6]">Rejected (&gt;100k)</td>
                   <td className="p-4 text-emerald-600 font-bold">Admitted</td>
                 </tr>
                 <tr className="bg-[#D82C2C]/5 font-semibold hover:bg-[#D82C2C]/10 transition-colors">
                   <td className="p-4 border-r border-[#E2E6E6] text-[#D82C2C]">
-                    ★ Q-Frame Calibrated (FIPS 205)
+                    &starf; Q-Frame Calibrated (FIPS 205)
                   </td>
-                  <td className="p-4 border-r border-[#E2E6E6] text-[#D82C2C]">15 × 20</td>
+                  <td className="p-4 border-r border-[#E2E6E6] text-[#D82C2C]">15 &times; 20</td>
                   <td className="p-4 font-bold border-r border-[#E2E6E6] text-[#D82C2C]">
                     259,247 Gas
                   </td>
@@ -1851,14 +534,14 @@ export default function Home() {
                 </tr>
                 <tr className="hover:bg-[#F2F2F2]/50 transition-colors">
                   <td className="p-4 font-bold border-r border-[#E2E6E6]">High-Security SPHINCS+</td>
-                  <td className="p-4 border-r border-[#E2E6E6]">20 × 30</td>
+                  <td className="p-4 border-r border-[#E2E6E6]">20 &times; 30</td>
                   <td className="p-4 font-bold border-r border-[#E2E6E6]">481,247 Gas</td>
                   <td className="p-4 text-[#D82C2C] font-bold border-r border-[#E2E6E6]">Rejected (&gt;100k)</td>
                   <td className="p-4 text-emerald-600 font-bold">Admitted (Safely &lt;1M)</td>
                 </tr>
                 <tr className="hover:bg-[#F2F2F2]/50 transition-colors">
                   <td className="p-4 font-bold border-r border-[#E2E6E6]">Stress Max Limit</td>
-                  <td className="p-4 border-r border-[#E2E6E6]">30 × 40</td>
+                  <td className="p-4 border-r border-[#E2E6E6]">30 &times; 40</td>
                   <td className="p-4 font-bold border-r border-[#E2E6E6]">925,247 Gas</td>
                   <td className="p-4 text-[#D82C2C] font-bold border-r border-[#E2E6E6]">Rejected (&gt;100k)</td>
                   <td className="p-4 text-emerald-600 font-bold">Admitted (Peak Limit)</td>
@@ -1869,16 +552,16 @@ export default function Home() {
         </section>
 
         {/* ─────────────────────────────────────────────────────────────
-            7. PRICING / STAKING & VERIFICATION TIERS (3 TIERS)
+            5. PRICING / STAKING & VERIFICATION TIERS (3 TIERS)
         ───────────────────────────────────────────────────────────── */}
         <section id="pricing" className="py-20 bg-[#F2F2F2] swiss-border-t swiss-border-b">
           <div className="max-w-[1280px] mx-auto px-6">
             <div className="text-center max-w-2xl mx-auto mb-16">
               <div className="text-xs font-swiss-mono text-[#D82C2C] uppercase font-bold tracking-wider">
-                06 / ECONOMIC INCENTIVE DESIGN
+                05 / ECONOMIC INCENTIVE DESIGN
               </div>
               <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight font-swiss-display text-[#1A1A1A] mt-2">
-                Mempool Staking & Verification Tiers
+                Mempool Staking &amp; Verification Tiers
               </h2>
               <p className="text-sm text-[#1A1A1A]/70 mt-2">
                 Under ERC-8421, mempool admission is not free: senders bond ETH in the registry 
@@ -1887,7 +570,6 @@ export default function Home() {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-8 items-stretch">
-              
               {/* Tier 1: Canonical */}
               <div className="bg-white p-8 swiss-border flex flex-col justify-between shadow-sm">
                 <div>
@@ -1966,12 +648,12 @@ export default function Home() {
                   </ul>
                 </div>
                 <div className="mt-8">
-                  <a
-                    href="#simulator"
+                  <Link
+                    href="/simulator"
                     className="w-full block text-center py-3.5 text-xs font-swiss-mono bg-[#D82C2C] hover:bg-[#b02222] text-white font-bold transition-colors cursor-pointer uppercase tracking-wider"
                   >
-                    Simulate Staked Flow
-                  </a>
+                    Simulate Staked Flow &rarr;
+                  </Link>
                 </div>
               </div>
 
@@ -2016,21 +698,20 @@ export default function Home() {
                   </button>
                 </div>
               </div>
-
             </div>
           </div>
         </section>
 
         {/* ─────────────────────────────────────────────────────────────
-            8. TESTIMONIALS / PROTOCOL RESEARCH CITATIONS (3 CARDS)
+            6. TESTIMONIALS / PROTOCOL RESEARCH CITATIONS
         ───────────────────────────────────────────────────────────── */}
         <section className="py-20 max-w-[1280px] mx-auto px-6">
           <div className="mb-12">
             <div className="text-xs font-swiss-mono text-[#D82C2C] uppercase font-bold tracking-wider">
-              07 / SCIENTIFIC CONTEXT
+              06 / SCIENTIFIC CONTEXT
             </div>
             <h2 className="text-3xl font-extrabold tracking-tight font-swiss-display text-[#1A1A1A] mt-1">
-              Cryptographic Standards & Framework Citations
+              Cryptographic Standards &amp; Framework Citations
             </h2>
             <p className="text-sm text-[#1A1A1A]/70 max-w-xl mt-1">
               Grounding Q-Frame within official NIST standards and Ethereum Foundation specifications.
@@ -2038,11 +719,10 @@ export default function Home() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            
             {/* Citation 1 */}
             <div className="p-6 bg-white swiss-border flex flex-col justify-between">
-              <p className="text-sm text-[#1A1A1A]/85 italic leading-relaxed">
-                “Stateless hash-based signatures standardized in NIST FIPS 205 (SLH-DSA) guarantee security against quantum computers, but require evaluating deep hash trees that far exceed existing blockchain validation bounds.”
+              <p className="text-sm text-[#1A1A1A]/85 italic leading-relaxed font-sans">
+                &ldquo;Stateless hash-based signatures standardized in NIST FIPS 205 (SLH-DSA) guarantee security against quantum computers, but require evaluating deep hash trees that far exceed existing blockchain validation bounds.&rdquo;
               </p>
               <div className="mt-6 pt-4 swiss-border-t">
                 <div className="font-bold text-sm font-swiss-display text-[#1A1A1A]">NIST FIPS 205</div>
@@ -2052,8 +732,8 @@ export default function Home() {
 
             {/* Citation 2 */}
             <div className="p-6 bg-white swiss-border flex flex-col justify-between">
-              <p className="text-sm text-[#1A1A1A]/85 italic leading-relaxed">
-                “EIP-8141 introduces frame transactions so verification, execution, and gas sponsorship are decoupled. The APPROVE opcode formalizes valid authorization without requiring full account abstraction predeploys.”
+              <p className="text-sm text-[#1A1A1A]/85 italic leading-relaxed font-sans">
+                &ldquo;EIP-8141 introduces frame transactions so verification, execution, and gas sponsorship are decoupled. The APPROVE opcode formalizes valid authorization without requiring full account abstraction predeploys.&rdquo;
               </p>
               <div className="mt-6 pt-4 swiss-border-t">
                 <div className="font-bold text-sm font-swiss-display text-[#1A1A1A]">EIP-8141 Spec</div>
@@ -2063,102 +743,53 @@ export default function Home() {
 
             {/* Citation 3 */}
             <div className="p-6 bg-white swiss-border flex flex-col justify-between">
-              <p className="text-sm text-[#1A1A1A]/85 italic leading-relaxed">
-                “ERC-8421 establishes alternative mempools with reputation staking. By holding economic stake in a registry contract, participants protect nodes from uncompensated computation.”
+              <p className="text-sm text-[#1A1A1A]/85 italic leading-relaxed font-sans">
+                &ldquo;ERC-8421 establishes alternative mempools with reputation staking. By holding economic stake in a registry contract, participants protect nodes from uncompensated computation.&rdquo;
               </p>
               <div className="mt-6 pt-4 swiss-border-t">
                 <div className="font-bold text-sm font-swiss-display text-[#1A1A1A]">ERC-8421 &amp; Ethrex</div>
                 <div className="text-xs font-swiss-mono text-[#A9B2B1]">LambdaClass &amp; EF Research</div>
               </div>
             </div>
-
           </div>
         </section>
 
         {/* ─────────────────────────────────────────────────────────────
-            9. FINAL IMPACTFUL CTA (SWISS ASYMMETRICAL POSTER)
+            7. FINAL IMPACTFUL CTA (SWISS ASYMMETRICAL POSTER)
         ───────────────────────────────────────────────────────────── */}
         <section className="bg-[#1A1A1A] text-white py-16 px-6 relative overflow-hidden">
           <div className="max-w-[1280px] mx-auto grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
             <div className="lg:col-span-8 space-y-4">
               <div className="inline-block px-2.5 py-1 bg-[#D82C2C] text-white text-xs font-swiss-mono font-bold">
-                SUBMISSION ARTIFACT · ETHGLOBAL MUMBAI 2026
+                POST-QUANTUM PROTOCOL SPECIFICATION
               </div>
               <h2 className="text-3xl sm:text-5xl font-extrabold tracking-tight font-swiss-display leading-tight">
                 VERIFIABLE POST-QUANTUM READINESS FOR ETHEREUM.
               </h2>
               <p className="text-sm sm:text-base text-white/70 max-w-xl">
-                Code authored from scratch, 100% passing test suites, and live on-chain deployment on the Hegotá Ethrex Devnet.
+                Code authored from scratch, 100% passing test suites, and live on-chain deployment on the Hegot&aacute; Ethrex Devnet.
               </p>
             </div>
             <div className="lg:col-span-4 flex flex-col gap-3">
-              <a
-                href="#evidence"
+              <Link
+                href="/simulator"
                 className="btn-swiss-primary text-center px-6 py-4 text-xs font-bold uppercase tracking-wider cursor-pointer"
               >
-                Inspect On-Chain Contract
-              </a>
-              <a
-                href="#simulator"
+                Launch Gas Simulator &rarr;
+              </Link>
+              <Link
+                href="/studio"
                 className="btn-swiss-secondary border-white text-white hover:bg-white hover:text-[#1A1A1A] text-center px-6 py-4 text-xs font-bold uppercase tracking-wider cursor-pointer"
               >
-                Launch Gas Simulator
-              </a>
+                Launch SDK Studio &rarr;
+              </Link>
             </div>
           </div>
         </section>
       </main>
 
-      {/* ─────────────────────────────────────────────────────────────
-          10. FOOTER (SWISS TYPOGRAPHIC GRID)
-      ───────────────────────────────────────────────────────────── */}
-      <footer className="bg-white swiss-border-t py-12 text-xs font-swiss-mono text-[#1A1A1A]">
-        <div className="max-w-[1280px] mx-auto px-6 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-8">
-          <div>
-            <div className="flex items-center gap-2 mb-3">
-              <span className="w-3 h-3 bg-[#D82C2C]" />
-              <span className="font-bold text-sm tracking-tight font-swiss-display">Q-FRAME</span>
-            </div>
-            <p className="text-[#A9B2B1] leading-relaxed">
-              Post-Quantum Frame Transactions &amp; Staked Alternative Mempools.
-              Built for ETHGlobal Mumbai 2026.
-            </p>
-            <div className="mt-4 text-[#A9B2B1]">
-              © 2026 Q-Frame Protocol. MIT License.
-            </div>
-          </div>
-
-          <div>
-            <div className="font-bold uppercase text-[11px] mb-3 text-[#1A1A1A]">DEVNET ENDPOINTS</div>
-            <ul className="space-y-2 text-[#A9B2B1]">
-              <li>Hegotá RPC: <code className="text-[#1A1A1A]">rpc1.hegota.ethrex.xyz</code></li>
-              <li>Chain ID: <code className="text-[#1A1A1A]">3151908 &amp; 1337</code></li>
-              <li>Explorer: <code className="text-[#1A1A1A]">dora.hegota.ethrex.xyz</code></li>
-              <li>Sidecar: <code className="text-[#1A1A1A]">altmempoolgateway</code></li>
-            </ul>
-          </div>
-
-          <div>
-            <div className="font-bold uppercase text-[11px] mb-3 text-[#1A1A1A]">REPOSITORY ARTIFACTS</div>
-            <ul className="space-y-2 text-[#A9B2B1]">
-              <li><a href="#" className="hover:text-[#D82C2C] transition-colors">PQBenchmarkAccount.sol</a></li>
-              <li><a href="#" className="hover:text-[#D82C2C] transition-colors">GasCurveTest.t.sol</a></li>
-              <li><a href="#" className="hover:text-[#D82C2C] transition-colors">step_pq_benchmark.ts</a></li>
-              <li><a href="#" className="hover:text-[#D82C2C] transition-colors">CHECKPOINT_1A.md</a></li>
-            </ul>
-          </div>
-
-          <div>
-            <div className="font-bold uppercase text-[11px] mb-3 text-[#1A1A1A]">BOUNTY TRACK</div>
-            <ul className="space-y-2 text-[#A9B2B1]">
-              <li className="text-[#1A1A1A] font-semibold">Ethereum Foundation ($5,000)</li>
-              <li>Frame Tx Alternative Mempool</li>
-              <li>Status: From Scratch Submission</li>
-              <li>Venue: ETHGlobal Mumbai</li>
-            </ul>
-          </div>
-        </div>
-      </footer>
+      {/* Universal Shared Footer */}
+      <Footer />
     </div>
   );
 }

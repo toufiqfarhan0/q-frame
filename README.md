@@ -6,8 +6,6 @@ An implementation of post-quantum signature verification within native execution
 
 The current implementation deploys `PQBenchmarkAccount` on the Hegotá Ethrex Devnet, implementing native EIP-8141 frame verification hooks (`HegotaSupport`) and calibrating verification gas envelopes against NIST FIPS 205 (SLH-DSA / SPHINCS+) parameter profiles. Verification gas sweeps demonstrate the 100,000 gas boundary enforced by standard mempools and the 2,000,000 gas extended ceiling unlocked via staked collateral in `NaiveStakingRegistry`. To explore key-state management for One-Time Signatures (OTS), Q-Frame investigates a two-dimensional nonce binding $\text{nonceKey} = \text{leafIndex}$ using the native EIP-8250 `NONCE_MANAGER` predeploy (`0x...8250`) to enable parallel leaf channels and protocol-enforced leaf retirement upon mining (while documenting the remaining open challenge of safe fee-bumping for one-time keys). All contracts, internal Yul accelerator libraries, deployment receipts (7.26M devnet gas), and execution calls (Block `#1,318,311`) are verified on-chain. See [checkpoint 1A](./reviews/CHECKPOINT_1A.md) for empirical gas curves, [checkpoint 1B](./reviews/CHECKPOINT_1B.md) for the 3-state admission protocol, [checkpoint 1C](./reviews/CHECKPOINT_1C.md) for the keyed-nonce OTS formalization, [devnet feedback](./FEEDBACK.md) for EF Access Layer findings, and [deployment record](./deployment.md) for the complete address inventory.
 
-Target bounty track: **Ethereum Foundation — Best use of the Frame Transaction Alternative Mempool** ($5,000 bounty).
-
 ---
 
 ## What is Q-Frame?

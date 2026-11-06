@@ -139,6 +139,16 @@ export const EXPLANATIONS: Record<string, Explanation> = {
       "Lines starting with FAIL name the rule and the entity at fault. 'no record on this node' means the node never saw it, for example when only ethrex rejected it.",
     why: "This is the habit to keep after the workshop: read the rule-by-rule report instead of guessing from one error string.",
   },
+  step_14_leaf_manager_demo: {
+    title: "Step 14: Q-Frame LeafManager SDK demo",
+    story:
+      "Demonstrates stateful hash-based leaf management for post-quantum signatures using EIP-8250 keyed nonces. It shows write-ahead journaling for leaf allocation, safe fee-bumping by retiring old leaves, and zero-state wallet recovery.",
+    components:
+      "LeafManager SDK, EIP-8250 NONCE_MANAGER predeploy at 0x...8250, and write-ahead leaf journal.",
+    watch:
+      "Leaf allocation status, replacement channel generation on fee bumping, and skip-ahead safety gap during recovery.",
+    why: "Because hash-based OTS keys are one-time use, signature revelation before on-chain mining requires strict local journaling and protocol-level key isolation.",
+  },
 };
 
 function wrap(text: string, width: number, indent: string): string {

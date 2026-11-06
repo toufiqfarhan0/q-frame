@@ -198,7 +198,7 @@ export default function Navbar() {
 
                 <button
                   onClick={disconnectWallet}
-                  className="w-full py-2 bg-rose-50 text-rose-700 border border-rose-200 text-xs font-mono font-bold hover:bg-rose-100 transition-colors"
+                  className="w-full py-2 bg-rose-50 text-rose-700 border border-rose-200 text-xs font-mono font-bold hover:bg-rose-100 transition-colors cursor-pointer"
                 >
                   DISCONNECT
                 </button>

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from "react";
 
 const STAKING_REGISTRY = "0xd51c04d7a0b01124e84de152f4e56d9eecb22d2f";
 const RPC_URL = "https://rpc1.hegota.ethrex.xyz";
@@ -28,6 +28,7 @@ const WalletContext = createContext<WalletContextType | undefined>(undefined);
 
 export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
+  const walletAddressRef = useRef<string | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isWalletModalOpen, setIsWalletModalOpen] = useState(false);
   const [chainId, setChainId] = useState<string | null>(null);
@@ -37,9 +38,14 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [isStaked, setIsStaked] = useState<boolean | null>(null);
   const [isCheckingStake, setIsCheckingStake] = useState<boolean>(false);
 
+  // Keep walletAddressRef synchronized
+  useEffect(() => {
+    walletAddressRef.current = walletAddress;
+  }, [walletAddress]);
+
   // Check on-chain stake directly against NaiveStakingRegistry
   const checkOnChainStake = useCallback(async (addr?: string): Promise<boolean> => {
-    const target = addr || walletAddress;
+    const target = addr || walletAddressRef.current;
     if (!target) {
       setIsStaked(null);
       return false;
@@ -77,13 +83,16 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setIsCheckingStake(false);
     }
-  }, [walletAddress]);
+  }, []);
 
   // Connect wallet
   const connectWallet = async () => {
     try {
       setIsConnecting(true);
       setWalletError(null);
+      if (typeof window !== "undefined") {
+        localStorage.removeItem("qframe_wallet_disconnected");
+      }
       const w = typeof window !== "undefined" ? (window as any) : null;
       if (!w || !w.ethereum) {
         setWalletError("No Web3 wallet detected. Please install MetaMask, Rabby, or Coinbase Wallet.");
@@ -92,6 +101,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       const accounts = await w.ethereum.request({ method: "eth_requestAccounts" });
       if (accounts && accounts.length > 0) {
         setWalletAddress(accounts[0]);
+        walletAddressRef.current = accounts[0];
         const currentChain = await w.ethereum.request({ method: "eth_chainId" });
         setChainId(currentChain);
         setIsWalletModalOpen(false);
@@ -104,10 +114,32 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const disconnectWallet = () => {
-    setWalletAddress(null);
-    setIsStaked(null);
-    setWalletError(null);
+  const disconnectWallet = async () => {
+    try {
+      if (typeof window !== "undefined") {
+        localStorage.setItem("qframe_wallet_disconnected", "true");
+      }
+      setWalletAddress(null);
+      walletAddressRef.current = null;
+      setIsStaked(null);
+      setWalletError(null);
+      setIsWalletModalOpen(false);
+
+      // Attempt to revoke permissions on providers supporting EIP-2255 (MetaMask, etc.)
+      const w = typeof window !== "undefined" ? (window as any) : null;
+      if (w && w.ethereum && w.ethereum.request) {
+        try {
+          await w.ethereum.request({
+            method: "wallet_revokePermissions",
+            params: [{ eth_accounts: {} }],
+          });
+        } catch {
+          // Unsupported or declined, local disconnection already persisted
+        }
+      }
+    } catch (e) {
+      console.error("Disconnect error:", e);
+    }
   };
 
   const switchToDevnet = async () => {
@@ -170,27 +202,58 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const w = typeof window !== "undefined" ? (window as any) : null;
     if (w && w.ethereum) {
-      w.ethereum.request({ method: "eth_accounts" }).then((accounts: string[]) => {
+      const isExplicitlyDisconnected =
+        typeof window !== "undefined" &&
+        localStorage.getItem("qframe_wallet_disconnected") === "true";
+
+      if (!isExplicitlyDisconnected) {
+        w.ethereum
+          .request({ method: "eth_accounts" })
+          .then((accounts: string[]) => {
+            if (accounts && accounts.length > 0) {
+              setWalletAddress(accounts[0]);
+              walletAddressRef.current = accounts[0];
+              checkOnChainStake(accounts[0]);
+            }
+          })
+          .catch(() => {});
+      }
+
+      w.ethereum
+        .request({ method: "eth_chainId" })
+        .then((chain: string) => {
+          setChainId(chain);
+        })
+        .catch(() => {});
+
+      const handleAccountsChanged = (accounts: string[]) => {
         if (accounts && accounts.length > 0) {
+          if (typeof window !== "undefined") {
+            localStorage.removeItem("qframe_wallet_disconnected");
+          }
           setWalletAddress(accounts[0]);
-          checkOnChainStake(accounts[0]);
-        }
-      });
-      w.ethereum.request({ method: "eth_chainId" }).then((chain: string) => {
-        setChainId(chain);
-      });
-      w.ethereum.on("accountsChanged", (accounts: string[]) => {
-        if (accounts.length > 0) {
-          setWalletAddress(accounts[0]);
+          walletAddressRef.current = accounts[0];
           checkOnChainStake(accounts[0]);
         } else {
           setWalletAddress(null);
+          walletAddressRef.current = null;
           setIsStaked(null);
         }
-      });
-      w.ethereum.on("chainChanged", (chain: string) => {
+      };
+
+      const handleChainChanged = (chain: string) => {
         setChainId(chain);
-      });
+      };
+
+      w.ethereum.on("accountsChanged", handleAccountsChanged);
+      w.ethereum.on("chainChanged", handleChainChanged);
+
+      return () => {
+        if (w.ethereum.removeListener) {
+          w.ethereum.removeListener("accountsChanged", handleAccountsChanged);
+          w.ethereum.removeListener("chainChanged", handleChainChanged);
+        }
+      };
     }
   }, [checkOnChainStake]);
 
